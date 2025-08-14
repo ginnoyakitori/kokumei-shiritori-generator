@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.21.2",
+    "firebase-functions": "^6.4.0"
   }
 }
