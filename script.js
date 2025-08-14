@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const wordCountInput = document.getElementById('wordCount');
     const wildcardTextInput = document.getElementById('wildcardText');
     const substringTextInput = document.getElementById('substringText');
+    const includeCharsInput = document.getElementById('includeChars');
 
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
@@ -83,11 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastChar = lastCharInput.value.trim() === '' ? null : lastCharInput.value.trim();
             const wordCountType = wordCountTypeSelect.value;
             const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
+            const includeChars = includeCharsInput.value.trim();
 
             response = await fetch('/api/shiritori', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, firstChar, lastChar, wordCount })
+                body: JSON.stringify({ listName, firstChar, lastChar, wordCount, includeChars })
             });
         } else if (mode === 'wildcard') {
             const listName = wildcardListNameSelect.value;
@@ -124,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 結果の表示ロジックを修正
         if (data.results) {
             const countMessage = document.createElement('p');
             countMessage.textContent = `${data.results.length} 通り見つかりました:`;
