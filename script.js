@@ -25,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchButton = document.getElementById('searchButton');
     const resultsDiv = document.getElementById('results');
 
-    // モード切り替え時のUI表示制御
     modeSelect.addEventListener('change', (event) => {
         shiritoriModeDiv.style.display = 'none';
         wildcardModeDiv.style.display = 'none';
@@ -44,7 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 単語数入力欄の追加・削除
     addWordCountInputButton.addEventListener('click', () => {
         const newGroup = document.createElement('div');
         newGroup.className = 'word-count-input-group';
@@ -57,14 +55,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     wordCountInputsContainer.addEventListener('click', (event) => {
         if (event.target.classList.contains('remove-word-count-input')) {
-            // 入力欄が1つしかない場合は削除しない
             if (wordCountInputsContainer.querySelectorAll('.word-count-input-group').length > 1) {
                 event.target.closest('.word-count-input-group').remove();
             }
         }
     });
 
-    // 単語数モードの切り替え（しりとりモード内）
     wordCountTypeSelect.addEventListener('change', (event) => {
         if (event.target.value === 'shortest') {
             wordCountInputContainer.style.display = 'none';
@@ -86,10 +82,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
             const includeChars = includeCharsInput.value.trim();
 
+            // ここを修正：重複を許容して配列に変換
+            const requiredChars = includeChars ? includeChars.split('') : null;
+
             response = await fetch('/api/shiritori', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, firstChar, lastChar, wordCount, includeChars })
+                body: JSON.stringify({ listName, firstChar, lastChar, wordCount, requiredChars })
             });
         } else if (mode === 'wildcard') {
             const listName = wildcardListNameSelect.value;

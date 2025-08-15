@@ -38,7 +38,7 @@ const loadWordLists = () => {
 loadWordLists();
 
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, includeChars } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars } = req.body;
     const words = wordLists[listName];
 
     if (!words) {
@@ -54,7 +54,6 @@ app.post('/api/shiritori', (req, res) => {
         return res.status(400).json({ error: '単語数は1以上の整数か、最短を指定してください。' });
     }
 
-    const requiredChars = includeChars ? new Set(includeChars.split('')) : null;
     let results = [];
     let totalCount = null;
     let charCounts = null;
@@ -151,8 +150,12 @@ function findShiritoriCombinations(words, firstChar, lastChar, wordCount, requir
 
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        // requiredCharsが配列の場合の処理を追加
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return requiredChars.every(char => charCounts[char] && charCounts[char] >= 1);
     };
 
     const backtrack = (path, usedWords) => {
@@ -194,8 +197,12 @@ function findShortestShiritori(words, firstChar, lastChar, requiredChars) {
     
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        // requiredCharsが配列の場合の処理を追加
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return requiredChars.every(char => charCounts[char] && charCounts[char] >= 1);
     };
 
     while (queue.length > 0) {
@@ -240,8 +247,15 @@ function findShiritoriCombinationsWithIncludeChars(words, firstChar, lastChar, w
 
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        const requiredCharCounts = requiredChars.reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return Object.keys(requiredCharCounts).every(char => charCounts[char] && charCounts[char] >= requiredCharCounts[char]);
     };
 
     const backtrack = (path, usedWords) => {
@@ -281,8 +295,15 @@ function findShortestShiritoriWithIncludeChars(words, firstChar, lastChar, requi
     
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        const requiredCharCounts = requiredChars.reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return Object.keys(requiredCharCounts).every(char => charCounts[char] && charCounts[char] >= requiredCharCounts[char]);
     };
 
     const startingWords = firstChar ? sortedWords.filter(word => normalizeWord(word).startsWith(firstChar)) : sortedWords;
@@ -360,8 +381,15 @@ function findAllShiritori(words, wordCount, requiredChars) {
 
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        const requiredCharCounts = requiredChars.reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return Object.keys(requiredCharCounts).every(char => charCounts[char] && charCounts[char] >= requiredCharCounts[char]);
     };
 
     const backtrack = (path, usedWords) => {
@@ -386,7 +414,7 @@ function findAllShiritori(words, wordCount, requiredChars) {
             }
         }
     };
-    backtrack([], new Set());
+    backtrack([], new Set(), 0);
     allResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
     return allResults;
 }
@@ -401,8 +429,15 @@ function findShortestShiritoriAll(words, requiredChars) {
 
     const checkRequiredChars = (path, requiredChars) => {
         if (!requiredChars) return true;
-        const allChars = path.join('').split('');
-        return [...requiredChars].every(char => allChars.includes(char));
+        const charCounts = path.join('').split('').reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        const requiredCharCounts = requiredChars.reduce((acc, char) => {
+            acc[char] = (acc[char] || 0) + 1;
+            return acc;
+        }, {});
+        return Object.keys(requiredCharCounts).every(char => charCounts[char] && charCounts[char] >= requiredCharCounts[char]);
     };
 
     for (const startWord of sortedWords) {
