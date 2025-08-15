@@ -55,41 +55,34 @@ app.post('/api/shiritori', (req, res) => {
     }
 
     const requiredChars = includeChars ? new Set(includeChars.split('')) : null;
+    let results = [];
+    let totalCount = null;
+    let charCounts = null;
 
-    // 最初の文字、最後の文字が両方空白、かつ含めたい文字が指定されている場合
-    if (firstChar === null && lastChar === null && includeChars) {
-        let results = [];
+    if (requiredChars) {
         if (wordCount === 'shortest') {
-            results = findShortestShiritoriAll(words, requiredChars);
+            results = findShortestShiritoriWithIncludeChars(words, firstChar, lastChar, requiredChars);
         } else {
-            results = findAllShiritori(words, wordCount, requiredChars);
+            results = findShiritoriCombinationsWithIncludeChars(words, firstChar, lastChar, wordCount, requiredChars);
         }
         res.json({ results });
-    } else if (firstChar === null || lastChar === null) {
-        // 最初の文字または最後の文字が指定されているが、含めたい文字の指定はない場合
-        if (includeChars) {
-             let results = [];
-             if (wordCount === 'shortest') {
-                results = findShortestShiritoriWithIncludeChars(words, firstChar, lastChar, requiredChars);
+    } else {
+        if (firstChar === null && lastChar === null) {
+            results = findAllShiritori(words, wordCount, requiredChars);
+            res.json({ results });
+        } else if (firstChar === null || lastChar === null) {
+            const allResults = findAllPossibleShiritori(words, wordCount, firstChar, lastChar);
+            totalCount = allResults ? Object.values(allResults).reduce((sum, current) => sum + current, 0) : 0;
+            charCounts = allResults;
+            res.json({ totalCount, charCounts });
+        } else {
+            if (wordCount === 'shortest') {
+                results = findShortestShiritori(words, firstChar, lastChar, requiredChars);
             } else {
-                results = findShiritoriCombinationsWithIncludeChars(words, firstChar, lastChar, wordCount, requiredChars);
+                results = findShiritoriCombinations(words, firstChar, lastChar, wordCount, requiredChars);
             }
             res.json({ results });
-        } else {
-            // 含めたい文字がない場合は既存の総数カウントロジック
-            const allResults = findAllPossibleShiritori(words, wordCount, firstChar, lastChar);
-            const totalCount = allResults ? Object.values(allResults).reduce((sum, current) => sum + current, 0) : 0;
-            res.json({ totalCount, charCounts: allResults });
         }
-    } else {
-        // 最初の文字、最後の文字、両方指定されている場合
-        let results = [];
-        if (wordCount === 'shortest') {
-            results = findShortestShiritori(words, firstChar, lastChar, requiredChars);
-        } else {
-            results = findShiritoriCombinations(words, firstChar, lastChar, wordCount, requiredChars);
-        }
-        res.json({ results });
     }
 });
 
