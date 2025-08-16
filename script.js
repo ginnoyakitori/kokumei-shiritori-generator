@@ -1,9 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     const modeSelect = document.getElementById('modeSelect');
-    const shiritoriModeDiv = document.getElementById('shiritoriMode');
-    const wildcardModeDiv = document.getElementById('wildcardMode');
-    const substringModeDiv = document.getElementById('substringMode');
-    const wordCountShiritoriModeDiv = document.getElementById('wordCountShiritoriMode');
+    const modeSections = {
+        shiritori: document.getElementById('shiritoriMode'),
+        wildcard: document.getElementById('wildcardMode'),
+        substring: document.getElementById('substringMode'),
+        wordCountShiritori: document.getElementById('wordCountShiritoriMode')
+    };
+    
+    // 各モード内の検索ボタンを個別に取得
+    const searchButtons = document.querySelectorAll('.search-btn');
 
     const listNameSelect = document.getElementById('listName');
     const wildcardListNameSelect = document.getElementById('wildcardListName');
@@ -18,37 +23,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const wildcardTextInput = document.getElementById('wildcardText');
     const substringTextInput = document.getElementById('substringText');
     const includeCharsInput = document.getElementById('includeChars');
-
+    
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
     
-    const searchButton = document.getElementById('searchButton');
     const resultsDiv = document.getElementById('results');
 
-    modeSelect.addEventListener('change', (event) => {
-        shiritoriModeDiv.style.display = 'none';
-        wildcardModeDiv.style.display = 'none';
-        substringModeDiv.style.display = 'none';
-        wordCountShiritoriModeDiv.style.display = 'none';
-        
-        const selectedMode = event.target.value;
-        if (selectedMode === 'shiritori') {
-            shiritoriModeDiv.style.display = 'block';
-        } else if (selectedMode === 'wildcard') {
-            wildcardModeDiv.style.display = 'block';
-        } else if (selectedMode === 'substring') {
-            substringModeDiv.style.display = 'block';
-        } else if (selectedMode === 'wordCountShiritori') {
-            wordCountShiritoriModeDiv.style.display = 'block';
+    const updateModeView = () => {
+        const selectedMode = modeSelect.value;
+        for (const mode in modeSections) {
+            modeSections[mode].classList.remove('active');
         }
-    });
+        modeSections[selectedMode].classList.add('active');
+    };
+
+    modeSelect.addEventListener('change', updateModeView);
+    updateModeView();
 
     addWordCountInputButton.addEventListener('click', () => {
         const newGroup = document.createElement('div');
         newGroup.className = 'word-count-input-group';
         newGroup.innerHTML = `
             <input type="number" class="word-count-input" value="2" min="1">
-            <button class="remove-word-count-input">削除</button>
+            <button class="remove-word-count-input">-</button>
         `;
         wordCountInputsContainer.appendChild(newGroup);
     });
@@ -69,114 +66,128 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    searchButton.addEventListener('click', async () => {
-        resultsDiv.innerHTML = '検索中...';
-        const mode = modeSelect.value;
-        let response;
-        
-        if (mode === 'shiritori') {
-            const listName = listNameSelect.value;
-            const firstChar = firstCharInput.value.trim() === '' ? null : firstCharInput.value.trim();
-            const lastChar = lastCharInput.value.trim() === '' ? null : lastCharInput.value.trim();
-            const wordCountType = wordCountTypeSelect.value;
-            const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
-            const includeChars = includeCharsInput.value.trim();
-
-            // ここを修正：重複を許容して配列に変換
-            const requiredChars = includeChars ? includeChars.split('') : null;
-
-            response = await fetch('/api/shiritori', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, firstChar, lastChar, wordCount, requiredChars })
-            });
-        } else if (mode === 'wildcard') {
-            const listName = wildcardListNameSelect.value;
-            const searchText = wildcardTextInput.value.trim();
-            response = await fetch('/api/wildcard_search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, searchText })
-            });
-        } else if (mode === 'substring') {
-            const listName = substringListNameSelect.value;
-            const searchText = substringTextInput.value.trim();
-            response = await fetch('/api/substring_search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, searchText })
-            });
-        } else { // wordCountShiritoriモード
-            const listName = wordCountShiritoriListNameSelect.value;
-            const wordCounts = Array.from(document.querySelectorAll('.word-count-input')).map(input => parseInt(input.value, 10));
-
-            response = await fetch('/api/word_count_shiritori', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listName, wordCounts })
-            });
-        }
-
-        const data = await response.json();
-        resultsDiv.innerHTML = '';
-
-        if (response.status !== 200) {
-            resultsDiv.textContent = `エラー: ${data.error}`;
-            return;
-        }
-
-        if (data.results) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `${data.results.length} 通り見つかりました:`;
-            resultsDiv.appendChild(countMessage);
+    searchButtons.forEach(button => {
+        button.addEventListener('click', async (event) => {
+            resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
+            const mode = modeSelect.value;
+            let response;
             
-            const ul = document.createElement('ul');
-            data.results.forEach((path, index) => {
-                const li = document.createElement('li');
-                li.textContent = `${index + 1}. ${path.join(' → ')}`;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-        } else if (data.totalCount !== undefined) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `総数: ${data.totalCount} 通り見つかりました。`;
-            resultsDiv.appendChild(countMessage);
+            if (mode === 'shiritori') {
+                const listName = listNameSelect.value;
+                const firstChar = firstCharInput.value.trim() === '' ? null : firstCharInput.value.trim();
+                const lastChar = lastCharInput.value.trim() === '' ? null : lastCharInput.value.trim();
+                const wordCountType = wordCountTypeSelect.value;
+                const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
+                const includeChars = includeCharsInput.value.trim();
+                const outputType = document.querySelector('input[name="outputType"]:checked').value;
 
-            if (data.charCounts) {
-                const charCountsList = document.createElement('ul');
-                for (const char in data.charCounts) {
-                    const listItem = document.createElement('li');
-                    listItem.textContent = `${char}: ${data.charCounts[char]}`;
-                    charCountsList.appendChild(listItem);
-                }
-                resultsDiv.appendChild(charCountsList);
+                const requiredChars = includeChars ? includeChars.split('') : null;
+
+                response = await fetch('/api/shiritori', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listName, firstChar, lastChar, wordCount, requiredChars, outputType })
+                });
+            } else if (mode === 'wildcard') {
+                const listName = wildcardListNameSelect.value;
+                const searchText = wildcardTextInput.value.trim();
+                response = await fetch('/api/wildcard_search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listName, searchText })
+                });
+            } else if (mode === 'substring') {
+                const listName = substringListNameSelect.value;
+                const searchText = substringTextInput.value.trim();
+                response = await fetch('/api/substring_search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listName, searchText })
+                });
+            } else { // wordCountShiritoriモード
+                const listName = wordCountShiritoriListNameSelect.value;
+                const wordCounts = Array.from(document.querySelectorAll('.word-count-input')).map(input => parseInt(input.value, 10));
+
+                response = await fetch('/api/word_count_shiritori', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listName, wordCounts })
+                });
             }
-        } else if (data.wildcardMatches) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `${data.wildcardMatches.length} 件見つかりました:`;
-            resultsDiv.appendChild(countMessage);
-            
-            const ul = document.createElement('ul');
-            data.wildcardMatches.forEach((word) => {
-                const li = document.createElement('li');
-                li.textContent = word;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-        } else if (data.substringMatches) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `${data.substringMatches.length} 件見つかりました:`;
-            resultsDiv.appendChild(countMessage);
-            
-            const ul = document.createElement('ul');
-            data.substringMatches.forEach((word) => {
-                const li = document.createElement('li');
-                li.textContent = word;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-        } else {
-            resultsDiv.textContent = '条件に合う単語は見つかりませんでした。';
-        }
+
+            const data = await response.json();
+            resultsDiv.innerHTML = '';
+
+            if (response.status !== 200) {
+                resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
+                return;
+            }
+
+            if (data.results) {
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `${data.results.length} 通り見つかりました:`;
+                resultsDiv.appendChild(countMessage);
+                
+                const ul = document.createElement('ul');
+                data.results.forEach((path, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${index + 1}. ${path.join(' → ')}`;
+                    ul.appendChild(li);
+                });
+                resultsDiv.appendChild(ul);
+            } else if (data.firstCharCounts) {
+                const totalCount = Object.values(data.firstCharCounts).reduce((sum, count) => sum + count, 0);
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `総数: ${totalCount} 通り見つかりました。`;
+                resultsDiv.appendChild(countMessage);
+                
+                const ul = document.createElement('ul');
+                for (const char in data.firstCharCounts) {
+                    const li = document.createElement('li');
+                    li.textContent = `${char}: ${data.firstCharCounts[char]} 通り`;
+                    ul.appendChild(li);
+                }
+                resultsDiv.appendChild(ul);
+            } else if (data.lastCharCounts) {
+                const totalCount = Object.values(data.lastCharCounts).reduce((sum, count) => sum + count, 0);
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `総数: ${totalCount} 通り見つかりました。`;
+                resultsDiv.appendChild(countMessage);
+
+                const ul = document.createElement('ul');
+                for (const char in data.lastCharCounts) {
+                    const li = document.createElement('li');
+                    li.textContent = `${char}: ${data.lastCharCounts[char]} 通り`;
+                    ul.appendChild(li);
+                }
+                resultsDiv.appendChild(ul);
+            } else if (data.wildcardMatches) {
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `${data.wildcardMatches.length} 件見つかりました:`;
+                resultsDiv.appendChild(countMessage);
+                
+                const ul = document.createElement('ul');
+                data.wildcardMatches.forEach((word) => {
+                    const li = document.createElement('li');
+                    li.textContent = word;
+                    ul.appendChild(li);
+                });
+                resultsDiv.appendChild(ul);
+            } else if (data.substringMatches) {
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `${data.substringMatches.length} 件見つかりました:`;
+                resultsDiv.appendChild(countMessage);
+                
+                const ul = document.createElement('ul');
+                data.substringMatches.forEach((word) => {
+                    const li = document.createElement('li');
+                    li.textContent = word;
+                    ul.appendChild(li);
+                });
+                resultsDiv.appendChild(ul);
+            } else {
+                resultsDiv.innerHTML = '<p class="no-results-message">条件に合う単語は見つかりませんでした。</p>';
+            }
+        });
     });
 });
