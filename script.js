@@ -6,8 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
         substring: document.getElementById('substringMode'),
         wordCountShiritori: document.getElementById('wordCountShiritoriMode')
     };
-    
-    // 各モード内の検索ボタンを個別に取得
+
     const searchButtons = document.querySelectorAll('.search-btn');
 
     const listNameSelect = document.getElementById('listName');
@@ -23,10 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const wildcardTextInput = document.getElementById('wildcardText');
     const substringTextInput = document.getElementById('substringText');
     const includeCharsInput = document.getElementById('includeChars');
-    
+
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
-    
+    const wordCountIncludeCharsInput = document.getElementById('wordCountIncludeChars');
+
     const resultsDiv = document.getElementById('results');
 
     const updateModeView = () => {
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
             const mode = modeSelect.value;
             let response;
-            
+
             if (mode === 'shiritori') {
                 const listName = listNameSelect.value;
                 const firstChar = firstCharInput.value.trim() === '' ? null : firstCharInput.value.trim();
@@ -106,12 +106,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } else { // wordCountShiritoriモード
                 const listName = wordCountShiritoriListNameSelect.value;
-                const wordCounts = Array.from(document.querySelectorAll('.word-count-input')).map(input => parseInt(input.value, 10));
+                const wordCounts = Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input')).map(input => parseInt(input.value, 10));
+                const includeChars = wordCountIncludeCharsInput.value.trim();
+                const requiredChars = includeChars ? includeChars.split('') : null;
 
-                response = await fetch('/api/word_count_shiritori', {
+                response = await fetch('/api/shiritori', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ listName, wordCounts })
+                    body: JSON.stringify({ listName, wordCount: wordCounts, requiredChars })
                 });
             }
 
@@ -123,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (data.results) {
+            if (data.results && data.results.length > 0) {
                 const countMessage = document.createElement('p');
                 countMessage.textContent = `${data.results.length} 通り見つかりました:`;
                 resultsDiv.appendChild(countMessage);
@@ -135,6 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ul.appendChild(li);
                 });
                 resultsDiv.appendChild(ul);
+            } else if (data.results && data.results.length === 0) {
+                resultsDiv.innerHTML = '<p class="no-results-message">条件に合う単語は見つかりませんでした。</p>';
             } else if (data.firstCharCounts) {
                 const totalCount = Object.values(data.firstCharCounts).reduce((sum, count) => sum + count, 0);
                 const countMessage = document.createElement('p');
