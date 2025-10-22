@@ -108,19 +108,14 @@ function checkExcludeChars(path, excludeChars) {
  */
 function getPermutations(arr) {
     if (arr.length === 0) return [[]];
-    if (arr.length === 1) return arr.map(subArr => subArr.map(n => [n]));
+    if (arr.length === 1) return arr[0].map(n => [n]);
 
     const result = [];
-    // 重複を避けるためにSetで処理済みの要素を追跡
-    const used = new Set();
     
     for (let i = 0; i < arr.length; i++) {
         const currentItem = arr[i];
-        const key = currentItem.map(String).join(','); // 配列の配列のキーを生成
-
-        if (used.has(key)) continue;
-        used.add(key);
-
+        
+        // 残りの要素を構築 (currentItemと同じ配列をコピーして使用しないように注意)
         const rest = arr.slice(0, i).concat(arr.slice(i + 1));
         const restPerms = getPermutations(rest);
 
@@ -130,7 +125,32 @@ function getPermutations(arr) {
             }
         }
     }
-    return result;
+    
+    // 生成された順列から重複を除去
+    const uniquePerms = [];
+    const seen = new Set();
+    result.forEach(perm => {
+        const key = perm.join(',');
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniquePerms.push(perm);
+        }
+    });
+    
+    return uniquePerms;
+}
+
+/**
+ * 💡 新規: 配列のデカルト積（すべての組み合わせ）を生成する関数
+ * @param {Array<number[]>} arr - [[2, 3], [4], [5, 6]] のような文字数パターンの配列
+ * @returns {Array<number[]>} [[2, 4, 5], [2, 4, 6], [3, 4, 5], [3, 4, 6]] のような結果の配列
+ */
+function generateCartesianProduct(arr) {
+    return arr.reduce((a, b) => {
+        return a.map(x => {
+            return b.map(y => x.concat(y));
+        }).reduce((c, d) => c.concat(d), []);
+    }, [[]]).filter(arr => arr.length > 0);
 }
 
 
@@ -228,71 +248,30 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
 
 /**
- * 💡 新規: 単語数パターン指定しりとり (A*探索は省略し全探索を実装)
- * @param {object} wordMap - 単語マップ
- * @param {Array<number[]>} wordCountPatterns - [[2, 3], [4], [5]] のような、各単語の文字数パターン
- * @param {string[]|null} requiredChars - 必須文字
- * @param {boolean} allowPermutation - 順列を許可するか
- * @returns {string[][]} 見つかったパスの配列
+ * 単語数パターン指定しりとり
  */
 function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation) {
     let allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     
-    // 処理する単語数の順序パターンリスト
     let patternSequences = [];
 
     if (allowPermutation) {
         // 並び替えを許可する場合、すべての順列を生成
         patternSequences = getPermutations(wordCountPatterns);
-        // 生成された順列は重複している可能性があるため、Setで一意化（配列の配列の比較は煩雑なのでここでは一旦簡略化）
-        // 厳密には、getPermutations内で重複処理を行うべきだが、ここでは簡略化されたgetPermutationsの結果をそのまま使う
     } else {
-        // 並び替えを許可しない場合、指定された順序で単語数パターンを抽出
-        // [[2, 3], [4], [5]] -> [2, 4, 5], [3, 4, 5] の順序パターン
-        
-        // 最初の単語の文字数候補
-        const firstWordCounts = wordCountPatterns[0] || [];
-        
-        for (const count of firstWordCounts) {
-            // 残りの単語の文字数パターンを使って、順列を生成するロジックが必要
-            // ここでは簡易的に、順列ロジックを再利用せず、単語数パターンをそのままつなぎ合わせる
-            
-            // 簡略化のため、並び替えを許可しない場合は、最初の単語の文字数のみ複数指定を許容し、
-            // 2番目以降の単語は最初の候補のみを採用する、という制限を設ける。
-            // (真のカーテシアン積は非常に複雑になるため、ここでは簡略化)
-            const baseSequence = wordCountPatterns.slice(1).map(arr => arr[0]);
-
-            for (const startCount of wordCountPatterns[0]) {
-                patternSequences.push([startCount, ...baseSequence]);
-            }
-            break; // 最初のパターン処理が終わったら抜ける（カーテシアン積を避けるため）
-        }
-
-        // カーテシアン積の厳密な実装が不要な場合は、単語数パターンをそのまま使う:
-        // 例: [[2, 3], [4], [5]] -> [[2, 4, 5], [3, 4, 5]]
-        // この実装は、getPermutationsの特殊なケースとして扱える
-        if (!allowPermutation && patternSequences.length === 0) {
-             // 最初の単語だけを反復し、残りは最初の候補を採用
-             if (wordCountPatterns.length > 0) {
-                 const rest = wordCountPatterns.slice(1).map(arr => arr[0]);
-                 patternSequences = wordCountPatterns[0].map(first => [first, ...rest]);
-             }
-        }
+        // 💡 並び替えを許可しない場合、デカルト積（すべての組み合わせ）を生成
+        patternSequences = generateCartesianProduct(wordCountPatterns);
+    }
+    
+    // 順列生成が空の場合の初期化をスキップ
+    if (patternSequences.length === 0 && wordCountPatterns.length > 0 && wordCountPatterns.every(arr => arr.length > 0)) {
+        // 基本的には発生しないはずだが、念のため。
+        console.warn("No sequence generated. Check pattern input.");
+        return [];
     }
 
-    // 重複する順序パターンを排除 (getPermutationsが完全に重複排除しない場合があるため)
-    const uniquePatternSequences = [];
-    const seenSequences = new Set();
-    patternSequences.forEach(seq => {
-        const key = seq.join(',');
-        if (!seenSequences.has(key)) {
-            seenSequences.add(key);
-            uniquePatternSequences.push(seq);
-        }
-    });
-
-    for (const sequence of uniquePatternSequences) {
+    for (const sequence of patternSequences) {
         const totalWordCount = sequence.length;
 
         function backtrack(path, usedWords, patternIndex) {
@@ -305,7 +284,6 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
             
             const requiredLength = sequence[patternIndex];
             
-            // 最初の単語候補
             let nextWords;
             if (path.length === 0) {
                  nextWords = Object.values(wordMap).flat();
@@ -345,6 +323,69 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
 }
 
 
+// ワイルドカード（？）を正規表現に変換するヘルパー関数
+function patternToRegex(pattern) {
+    let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
+    regexString = regexString.replace(/？/g, '.'); 
+    return new RegExp('^' + regexString + '$');
+}
+
+function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPattern, wordCount, requiredChars) {
+    const allResults = [];
+    const collator = new Intl.Collator('ja', { sensitivity: 'base' });
+    
+    const firstRegex = patternToRegex(firstWordPattern); 
+
+    let lastRegex = null;
+    if (lastWordPattern && lastWordPattern.trim() !== '') {
+        lastRegex = patternToRegex(lastWordPattern);
+    }
+    
+    const allWords = Object.values(wordMap).flat();
+
+    const startingWords = allWords.filter(word => firstRegex.test(word));
+
+    function backtrack(path, usedWords) {
+        if (path.length === wordCount) {
+            const lastWord = path[path.length - 1];
+            
+            if ((!lastRegex || lastRegex.test(lastWord)) && 
+                checkRequiredChars(path, requiredChars)) {
+                allResults.push([...path]);
+            }
+            return;
+        }
+        
+        const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
+        if (!lastCharOfCurrent) return;
+        
+        const nextWords = wordMap[lastCharOfCurrent] || [];
+
+        for (const word of nextWords) {
+            if (!usedWords.has(word)) {
+                path.push(word);
+                usedWords.add(word);
+                backtrack(path, usedWords);
+                usedWords.delete(word);
+                path.pop();
+            }
+        }
+    }
+
+    for (const word of startingWords) {
+        if (wordCount === 1) {
+            if ((!lastRegex || lastRegex.test(word)) && checkRequiredChars([word], requiredChars)) {
+                allResults.push([word]);
+            }
+            continue;
+        }
+        backtrack([word], new Set([word]));
+    }
+
+    return allResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
+}
+
+
 // === Express エンドポイント ===
 
 // サーバー起動時にデータをロード
@@ -367,7 +408,6 @@ app.post('/api/shiritori', (req, res) => {
          return res.status(400).json({ error: '単語数は1以上の数字である必要があります。' });
     }
     
-    // 必須文字と除外文字の処理
     if (requiredChars && requiredChars.length === 0) {
         requiredChars = null;
     }
@@ -414,7 +454,7 @@ app.post('/api/shiritori', (req, res) => {
 });
 
 
-// 💡 新規エンドポイント: 単語数指定しりとり
+// 単語数指定しりとり (修正済)
 app.post('/api/word_count_shiritori', (req, res) => {
     let { listName, wordCountPatterns, requiredChars, allowPermutation } = req.body;
     const map = wordMap[listName];
@@ -423,7 +463,6 @@ app.post('/api/word_count_shiritori', (req, res) => {
         return res.status(400).json({ error: '無効な単語数パターンが指定されました。' });
     }
     
-    // 単語数パターンがすべて有効な数字の配列であることを確認
     const isValid = wordCountPatterns.every(arr => Array.isArray(arr) && arr.length > 0 && arr.every(n => typeof n === 'number' && n > 0));
     if (!isValid) {
         return res.status(400).json({ error: '単語数の指定は1以上の数字である必要があります（例: [[2, 3], [4]]）。' });
