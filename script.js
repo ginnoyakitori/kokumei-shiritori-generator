@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
         shiritori: document.getElementById('shiritoriMode'),
         wildcard: document.getElementById('wildcardMode'),
         substring: document.getElementById('substringMode'),
-        wordCountShiritori: document.getElementById('wordCountShiritoriMode')
+        wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
+        wildcardShiritori: document.getElementById('wildcardShiritoriMode') // 💡 新しいモード
     };
 
     const searchButtons = document.querySelectorAll('.search-btn');
@@ -13,6 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const wildcardListNameSelect = document.getElementById('wildcardListName');
     const substringListNameSelect = document.getElementById('substringListName');
     const wordCountShiritoriListNameSelect = document.getElementById('wordCountShiritoriListName');
+    
+    // 💡 ワイルドカードしりとりモード用のDOM要素
+    const wildcardShiritoriListNameSelect = document.getElementById('wildcardShiritoriListName');
+    const firstWordPatternInput = document.getElementById('firstWordPattern');
+    const lastWordPatternInput = document.getElementById('lastWordPattern');
+    const wildcardShiritoriWordCountInput = document.getElementById('wildcardShiritoriWordCount');
+    const wildcardShiritoriIncludeCharsInput = document.getElementById('wildcardShiritoriIncludeChars');
 
     const firstCharInput = document.getElementById('firstChar');
     const lastCharInput = document.getElementById('lastChar');
@@ -32,9 +40,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
         for (const mode in modeSections) {
-            modeSections[mode].classList.remove('active');
+            // modeSections[mode]が存在することを確認
+            if (modeSections[mode]) { 
+                modeSections[mode].classList.remove('active');
+            }
         }
-        modeSections[selectedMode].classList.add('active');
+        if (modeSections[selectedMode]) {
+            modeSections[selectedMode].classList.add('active');
+        }
     };
 
     modeSelect.addEventListener('change', updateModeView);
@@ -104,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ listName, searchText })
                 });
-            } else { // wordCountShiritoriモード
+            } else if (mode === 'wordCountShiritori') {
                 const listName = wordCountShiritoriListNameSelect.value;
                 const wordCounts = Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input')).map(input => parseInt(input.value, 10));
                 const includeChars = wordCountIncludeCharsInput.value.trim();
@@ -115,7 +128,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ listName, wordCount: wordCounts, requiredChars })
                 });
+            } else if (mode === 'wildcardShiritori') { // 💡 新しいモードの処理
+                const listName = wildcardShiritoriListNameSelect.value;
+                const firstWordPattern = firstWordPatternInput.value.trim();
+                const lastWordPattern = lastWordPatternInput.value.trim();
+                const wordCount = parseInt(wildcardShiritoriWordCountInput.value, 10);
+                const includeChars = wildcardShiritoriIncludeCharsInput.value.trim();
+                const requiredChars = includeChars ? includeChars.split('') : null;
+                
+                response = await fetch('/api/wildcard_shiritori', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ listName, firstWordPattern, lastWordPattern, wordCount, requiredChars })
+                });
             }
+
 
             const data = await response.json();
             resultsDiv.innerHTML = '';
