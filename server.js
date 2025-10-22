@@ -16,27 +16,36 @@ const KOKUMEI_KEY = 'kokumei.txt';
 const SHUTOMEI_KEY = 'shutomei.txt';
 const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
 
-// === 共通関数 (省略せず掲載) ===
+// === 共通関数 ===
 
+/**
+ * 日本語の単語をノーマライズし、しりとりで使う「カナ」を取得
+ */
 function normalizeWord(word) {
     if (!word) return '';
     let normalized = word.normalize('NFKC'); 
     return normalized.charAt(0);
 }
 
+/**
+ * しりとりで使う「カナ」の最後の文字を取得。
+ */
 function getShiritoriLastChar(word) {
     const normalized = word.normalize('NFKC');
     let lastChar = normalized.slice(-1);
     let effectiveLastChar = lastChar;
     
+    // 1. 長音符「ー」の処理
     if (lastChar === 'ー' && normalized.length > 1) {
         effectiveLastChar = normalized.slice(-2, -1);
     }
     
+    // 2. 「ン」の処理
     if (effectiveLastChar === 'ン' || effectiveLastChar === 'ん') {
         return 'ン'; 
     }
     
+    // 3. 小さい文字の処理
     switch (effectiveLastChar) {
         case 'ゃ': case 'ャ': return 'ヤ';
         case 'ゅ': case 'ュ': return 'ユ';
@@ -51,6 +60,9 @@ function getShiritoriLastChar(word) {
     }
 }
 
+/**
+ * ファイルから単語リストを読み込み、マップを構築
+ */
 function loadWordData() {
     const individualFiles = [KOKUMEI_KEY, SHUTOMEI_KEY];
 
@@ -67,8 +79,9 @@ function loadWordData() {
         }
     });
 
-    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) {
-        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEi_KEY]];
+    // 💡 エラー修正: SHUTOMEi_KEY -> SHUTOMEI_KEY
+    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) { 
+        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]]; 
         const uniqueWords = [...new Set(combinedWords)].sort();
         wordLists[KOKUMEI_SHUTOMEI_KEY] = uniqueWords;
     }
@@ -101,6 +114,9 @@ function checkExcludeChars(path, excludeChars) {
 
 // === 探索補助関数 ===
 
+/**
+ * 配列の順列を生成する再帰関数 (単語数パターンの順列)
+ */
 function getPermutations(arr) {
     if (arr.length === 0) return [[]];
     if (arr.length === 1) return arr[0].map(n => [n]);
@@ -120,6 +136,7 @@ function getPermutations(arr) {
         }
     }
     
+    // 生成された順列から重複を除去
     const uniquePerms = [];
     const seen = new Set();
     result.forEach(perm => {
@@ -133,6 +150,9 @@ function getPermutations(arr) {
     return uniquePerms;
 }
 
+/**
+ * 配列のデカルト積（すべての組み合わせ）を生成する関数
+ */
 function generateCartesianProduct(arr) {
     return arr.reduce((a, b) => {
         return a.map(x => {
@@ -144,6 +164,9 @@ function generateCartesianProduct(arr) {
 
 // === 探索関数 ===
 
+/**
+ * 文字指定しりとり (全通り探索)
+ */
 function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
@@ -231,6 +254,9 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 }
 
 
+/**
+ * 単語数パターン指定しりとり
+ */
 function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation) {
     let allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
@@ -238,8 +264,10 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
     let patternSequences = [];
 
     if (allowPermutation) {
+        // 並び替えを許可する場合、すべての順列を生成
         patternSequences = getPermutations(wordCountPatterns);
     } else {
+        // 並び替えを許可しない場合、デカルト積（すべての組み合わせ）を生成
         patternSequences = generateCartesianProduct(wordCountPatterns);
     }
     
@@ -284,6 +312,7 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
         backtrack([], new Set(), 0);
     }
     
+    // パス全体で重複しているものを排除
     const finalResults = [];
     const seenPaths = new Set();
     
@@ -299,12 +328,16 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
 }
 
 
+// ワイルドカード（？）を正規表現に変換するヘルパー関数
 function patternToRegex(pattern) {
     let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
     regexString = regexString.replace(/？/g, '.'); 
     return new RegExp('^' + regexString + '$');
 }
 
+/**
+ * ？文字指定しりとり
+ */
 function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPattern, wordCount, requiredChars) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
@@ -366,7 +399,7 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
 // サーバー起動時にデータをロード
 loadWordData();
 
-// 文字指定しりとり検索 (終了文字件数ソートロジックを修正)
+// 文字指定しりとり検索
 app.post('/api/shiritori', (req, res) => {
     let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType } = req.body;
     const words = wordLists[listName];
@@ -412,7 +445,7 @@ app.post('/api/shiritori', (req, res) => {
             }
         });
         
-        // 💡 50音順ソートのロジック
+        // 50音順ソートのロジック
         const collator = new Intl.Collator('ja', { sensitivity: 'base' });
         
         const sortedCounts = Object.entries(counts)
@@ -425,7 +458,6 @@ app.post('/api/shiritori', (req, res) => {
 
         
         if (outputType === 'firstCharCount') {
-            // 開始文字別の件数はそのまま返す (50音順にソート済み)
             return res.json({ firstCharCounts: sortedCounts });
         } else {
             // 終了文字別の件数は50音順にソートして返す
@@ -443,7 +475,7 @@ app.post('/api/shiritori', (req, res) => {
 });
 
 
-// 単語数指定しりとり (既存)
+// 単語数指定しりとり
 app.post('/api/word_count_shiritori', (req, res) => {
     let { listName, wordCountPatterns, requiredChars, allowPermutation } = req.body;
     const map = wordMap[listName];
@@ -471,7 +503,7 @@ app.post('/api/word_count_shiritori', (req, res) => {
 });
 
 
-// ？文字検索 (既存)
+// ？文字検索
 app.post('/api/wildcard_search', (req, res) => {
     const { listName, searchText } = req.body;
     const words = wordLists[listName];
@@ -486,7 +518,7 @@ app.post('/api/wildcard_search', (req, res) => {
     return res.json({ wildcardMatches: matches });
 });
 
-// 部分文字列検索 (既存)
+// 部分文字列検索
 app.post('/api/substring_search', (req, res) => {
     const { listName, searchText } = req.body;
     const words = wordLists[listName];
@@ -499,7 +531,7 @@ app.post('/api/substring_search', (req, res) => {
     return res.json({ substringMatches: matches });
 });
 
-// ？文字指定しりとり検索 (既存)
+// ？文字指定しりとり検索
 app.post('/api/wildcard_shiritori', (req, res) => {
     let { listName, firstWordPattern, lastWordPattern, wordCount, requiredChars } = req.body;
     const map = wordMap[listName];
