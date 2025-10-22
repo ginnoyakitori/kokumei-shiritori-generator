@@ -462,13 +462,13 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
 
     // 1. 最初の単語の候補を抽出
-    const firstWordRegex = new RegExp(`^${firstWordPattern.replace(/○/g, '.')}$`);
+    const firstWordRegex = new RegExp(`^${firstWordPattern.replace(/？/g, '.')}$`);
     const potentialStartWords = Object.values(wordMap).flat().filter(word => firstWordRegex.test(word));
     
     // 2. 最後の単語の条件を正規表現に変換 (探索を高速化するため)
     let lastWordRegex = null;
     if (lastWordPattern) {
-        lastWordRegex = new RegExp(`^${lastWordPattern.replace(/○/g, '.')}$`);
+        lastWordRegex = new RegExp(`^${lastWordPattern.replace(/？/g, '.')}$`);
     }
 
     function backtrack(path, usedWords) {
@@ -578,7 +578,7 @@ app.post('/api/wildcard_search', (req, res) => {
         return res.status(400).json({ error: '無効な単語リストです。' });
     }
     
-    const regexPattern = `^${searchText.replace(/○/g, '.')}$`;
+    const regexPattern = `^${searchText.replace(/？/g, '.')}$`;
     let regex;
     try {
         regex = new RegExp(regexPattern);
