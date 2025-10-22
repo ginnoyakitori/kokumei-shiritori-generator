@@ -16,7 +16,7 @@ const KOKUMEI_KEY = 'kokumei.txt';
 const SHUTOMEI_KEY = 'shutomei.txt';
 const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
 
-// === 共通関数 (省略せず掲載) ===
+// === 共通関数 ===
 
 function normalizeWord(word) {
     if (!word) return '';
@@ -68,8 +68,8 @@ function loadWordData() {
     });
 
     // 💡 修正箇所: SHUTOMEi_KEY -> SHUTOMEI_KEY
-    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) {
-        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]]; 
+    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) { 
+        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]];
         const uniqueWords = [...new Set(combinedWords)].sort();
         wordLists[KOKUMEI_SHUTOMEI_KEY] = uniqueWords;
     }
@@ -417,8 +417,9 @@ app.post('/api/shiritori', (req, res) => {
         const collator = new Intl.Collator('ja', { sensitivity: 'base' });
         
         const sortedCounts = Object.entries(counts)
+            // 50音順にキー(char)でソート
             .sort(([charA], [charB]) => collator.compare(charA, charB))
-            // オブジェクトに戻す
+            // オブジェクトに戻す (Node.jsの仕様により順序が保持される)
             .reduce((obj, [key, value]) => {
                 obj[key] = value;
                 return obj;
@@ -426,7 +427,7 @@ app.post('/api/shiritori', (req, res) => {
 
         
         if (outputType === 'firstCharCount') {
-            // 開始文字別の件数はそのまま返す (50音順にソート済み)
+            // 開始文字別の件数は50音順にソートして返す
             return res.json({ firstCharCounts: sortedCounts });
         } else {
             // 終了文字別の件数は50音順にソートして返す
