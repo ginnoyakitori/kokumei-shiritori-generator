@@ -68,7 +68,7 @@ function loadWordData() {
     });
 
     if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) {
-        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]];
+        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEi_KEY]];
         const uniqueWords = [...new Set(combinedWords)].sort();
         wordLists[KOKUMEI_SHUTOMEI_KEY] = uniqueWords;
     }
@@ -101,11 +101,6 @@ function checkExcludeChars(path, excludeChars) {
 
 // === 探索補助関数 ===
 
-/**
- * 💡 新規: 配列の順列を生成する再帰関数 (重複を考慮)
- * @param {Array<number[]>} arr - 組み合わせの配列
- * @returns {Array<number[]>} 全ての順列の配列
- */
 function getPermutations(arr) {
     if (arr.length === 0) return [[]];
     if (arr.length === 1) return arr[0].map(n => [n]);
@@ -115,7 +110,6 @@ function getPermutations(arr) {
     for (let i = 0; i < arr.length; i++) {
         const currentItem = arr[i];
         
-        // 残りの要素を構築 (currentItemと同じ配列をコピーして使用しないように注意)
         const rest = arr.slice(0, i).concat(arr.slice(i + 1));
         const restPerms = getPermutations(rest);
 
@@ -126,7 +120,6 @@ function getPermutations(arr) {
         }
     }
     
-    // 生成された順列から重複を除去
     const uniquePerms = [];
     const seen = new Set();
     result.forEach(perm => {
@@ -140,11 +133,6 @@ function getPermutations(arr) {
     return uniquePerms;
 }
 
-/**
- * 💡 新規: 配列のデカルト積（すべての組み合わせ）を生成する関数
- * @param {Array<number[]>} arr - [[2, 3], [4], [5, 6]] のような文字数パターンの配列
- * @returns {Array<number[]>} [[2, 4, 5], [2, 4, 6], [3, 4, 5], [3, 4, 6]] のような結果の配列
- */
 function generateCartesianProduct(arr) {
     return arr.reduce((a, b) => {
         return a.map(x => {
@@ -156,10 +144,6 @@ function generateCartesianProduct(arr) {
 
 // === 探索関数 ===
 
-/**
- * 文字指定しりとり (全通り探索)
- * ... (変更なし)
- */
 function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
@@ -247,9 +231,6 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 }
 
 
-/**
- * 単語数パターン指定しりとり
- */
 function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation) {
     let allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
@@ -257,16 +238,12 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
     let patternSequences = [];
 
     if (allowPermutation) {
-        // 並び替えを許可する場合、すべての順列を生成
         patternSequences = getPermutations(wordCountPatterns);
     } else {
-        // 💡 並び替えを許可しない場合、デカルト積（すべての組み合わせ）を生成
         patternSequences = generateCartesianProduct(wordCountPatterns);
     }
     
-    // 順列生成が空の場合の初期化をスキップ
     if (patternSequences.length === 0 && wordCountPatterns.length > 0 && wordCountPatterns.every(arr => arr.length > 0)) {
-        // 基本的には発生しないはずだが、念のため。
         console.warn("No sequence generated. Check pattern input.");
         return [];
     }
@@ -307,7 +284,6 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
         backtrack([], new Set(), 0);
     }
     
-    // パス全体で重複しているものを排除
     const finalResults = [];
     const seenPaths = new Set();
     
@@ -323,7 +299,6 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
 }
 
 
-// ワイルドカード（？）を正規表現に変換するヘルパー関数
 function patternToRegex(pattern) {
     let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
     regexString = regexString.replace(/？/g, '.'); 
@@ -391,7 +366,7 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
 // サーバー起動時にデータをロード
 loadWordData();
 
-// 文字指定しりとり検索 (既存)
+// 文字指定しりとり検索 (終了文字件数ソートロジックを修正)
 app.post('/api/shiritori', (req, res) => {
     let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType } = req.body;
     const words = wordLists[listName];
@@ -437,10 +412,24 @@ app.post('/api/shiritori', (req, res) => {
             }
         });
         
+        // 💡 50音順ソートのロジック
+        const collator = new Intl.Collator('ja', { sensitivity: 'base' });
+        
+        const sortedCounts = Object.entries(counts)
+            .sort(([charA], [charB]) => collator.compare(charA, charB))
+            // オブジェクトに戻す
+            .reduce((obj, [key, value]) => {
+                obj[key] = value;
+                return obj;
+            }, {});
+
+        
         if (outputType === 'firstCharCount') {
-            return res.json({ firstCharCounts: counts });
+            // 開始文字別の件数はそのまま返す (50音順にソート済み)
+            return res.json({ firstCharCounts: sortedCounts });
         } else {
-            return res.json({ lastCharCounts: counts });
+            // 終了文字別の件数は50音順にソートして返す
+            return res.json({ lastCharCounts: sortedCounts });
         }
         
     } else { // outputType === 'path'
@@ -454,7 +443,7 @@ app.post('/api/shiritori', (req, res) => {
 });
 
 
-// 単語数指定しりとり (修正済)
+// 単語数指定しりとり (既存)
 app.post('/api/word_count_shiritori', (req, res) => {
     let { listName, wordCountPatterns, requiredChars, allowPermutation } = req.body;
     const map = wordMap[listName];
