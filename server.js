@@ -10,6 +10,7 @@ app.use(express.static(path.join(__dirname, '')));
 const wordLists = {};
 const wordMap = {};
 const suffixTrees = {};
+const shiritoriCache = {}; // 👈 キャッシュ用オブジェクトを追加
 
 // Suffix Treeのノードクラス
 class Node {
@@ -57,13 +58,13 @@ const loadWordLists = () => {
         const shutomeiPath = path.join(__dirname, 'shutomei.txt');
         
         const kokumeiWords = fs.readFileSync(kokumeiPath, 'utf-8')
-                                 .split('\n')
-                                 .map(word => word.trim())
-                                 .filter(word => word.length > 0);
+                               .split('\n')
+                               .map(word => word.trim())
+                               .filter(word => word.length > 0);
         const shutomeiWords = fs.readFileSync(shutomeiPath, 'utf-8')
-                                 .split('\n')
-                                 .map(word => word.trim())
-                                 .filter(word => word.length > 0);
+                               .split('\n')
+                               .map(word => word.trim())
+                               .filter(word => word.length > 0);
         
         wordLists['kokumei.txt'] = kokumeiWords;
         wordLists['shutomei.txt'] = shutomeiWords;
@@ -87,6 +88,24 @@ const loadWordLists = () => {
         }
         
         console.log('単語リストを読み込み、データ構造を最適化しました。');
+
+        // 💡 4単語以下のしりとりパスを生成し、キャッシュに保存
+        const listNamesToCache = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
+        const maxCacheLength = 4; // 4単語までキャッシュ
+
+        for (const listName of listNamesToCache) {
+            shiritoriCache[listName] = {};
+            const map = wordMap[listName];
+            
+            console.log(`\n${listName} の ${maxCacheLength} 単語までのしりとりパスを計算中...`);
+            // 単語数2からmaxCacheLengthまでキャッシュ
+            for (let count = 2; count <= maxCacheLength; count++) {
+                // findShiritoriCombinationsを使用して、全通りのパスを計算
+                shiritoriCache[listName][count] = findShiritoriCombinations(map, null, null, count, null);
+                console.log(`- ${listName} の ${count} 単語パス: ${shiritoriCache[listName][count].length} 件をキャッシュしました。`);
+            }
+        }
+        
     } catch (error) {
         console.error('ファイルの読み込み中にエラーが発生しました:', error);
     }
@@ -348,6 +367,14 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
     const startingWords = firstChar ? (wordMap[firstChar] || []) : Object.values(wordMap).flat();
     for (const word of startingWords) {
+        // wordCountが1の場合は、単語自体が条件を満たすかチェック
+        if (wordCount === 1) {
+             if ((lastChar === null || getShiritoriLastChar(word) === lastChar) && checkRequiredChars([word], requiredChars)) {
+                 allResults.push([word]);
+             }
+             continue;
+        }
+        
         backtrack([word], new Set([word]));
     }
 
@@ -378,6 +405,13 @@ function findFirstCharCounts(wordMap, firstChar, lastChar, wordCount, requiredCh
     }
     const startingWords = firstChar ? (wordMap[firstChar] || []) : Object.values(wordMap).flat();
     for (const word of startingWords) {
+        if (wordCount === 1) {
+             if ((lastChar === null || getShiritoriLastChar(word) === lastChar) && checkRequiredChars([word], requiredChars)) {
+                 const startChar = normalizeWord(word)[0];
+                 counts[startChar] = (counts[startChar] || 0) + 1;
+             }
+             continue;
+        }
         backtrack([word], new Set([word]));
     }
     return counts;
@@ -407,6 +441,13 @@ function findLastCharCounts(wordMap, firstChar, lastChar, wordCount, requiredCha
     }
     const startingWords = firstChar ? (wordMap[firstChar] || []) : Object.values(wordMap).flat();
     for (const word of startingWords) {
+        if (wordCount === 1) {
+             const endChar = getShiritoriLastChar(word);
+             if ((lastChar === null || endChar === lastChar) && checkRequiredChars([word], requiredChars)) {
+                 counts[endChar] = (counts[endChar] || 0) + 1;
+             }
+             continue;
+        }
         backtrack([word], new Set([word]));
     }
     return counts;
@@ -417,6 +458,7 @@ app.post('/api/shiritori', (req, res) => {
     let { listName, firstChar, lastChar, wordCount, requiredChars, outputType } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
+    const cache = shiritoriCache[listName]; // 👈 キャッシュを取得
 
     if (!words || !map) {
         return res.status(400).json({ error: '無効な単語リストです。' });
@@ -444,11 +486,16 @@ app.post('/api/shiritori', (req, res) => {
         const counts = findLastCharCounts(map, firstChar, lastChar, wordCount, requiredChars);
         res.json({ lastCharCounts: counts });
     } else { // outputType === 'path'
-        if (isShortestPath) {
-             results = findShortestShiritoriAStar(map, firstChar, lastChar, requiredChars);
+        // 💡 キャッシュヒットの確認
+        if (typeof wordCount === 'number' && wordCount >= 2 && wordCount <= 4 && !firstChar && !lastChar && !requiredChars && cache && cache[wordCount]) {
+            // キャッシュが利用可能な場合は、キャッシュから結果を返す
+            results = cache[wordCount];
+        } else if (isShortestPath) {
+            results = findShortestShiritoriAStar(map, firstChar, lastChar, requiredChars);
         } else if (Array.isArray(wordCount)) {
             results = findWordCountShiritoriAStar(map, wordCount, requiredChars);
         } else {
+            // キャッシュ条件を満たさない場合は全通り探索
             results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars);
         }
         res.json({ results });
