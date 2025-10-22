@@ -11,7 +11,11 @@ let wordLists = {};
 let wordMap = {}; // {リスト名: {開始文字: [単語, ...]}}
 const shiritoriCache = {};
 
+// リストファイル名 (kokumei_shutomei.txtは物理ファイルではなく、他の2つの統合を示すキーとして扱います)
 const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
+const KOKUMEI_KEY = 'kokumei.txt';
+const SHUTOMEI_KEY = 'shutomei.txt';
+const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
 
 // === データ読み込みと前処理関数 ===
 
@@ -23,17 +27,15 @@ const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
  */
 function normalizeWord(word) {
     if (!word) return '';
-    // ひらがな・カタカナを統一し、濁点・半濁点を考慮しない比較のためのノーマライズ（ここでは簡略化）
     let normalized = word.normalize('NFKC'); 
     return normalized.charAt(0);
 }
 
 /**
- * 💡 修正: しりとりで使う「カナ」の最後の文字を取得。
- * 長音符('-')と小さい文字(ゃゅょっ)のルールを適用します。
- * * 💡 「ン」で終わる単語は「ン」を返します（接続可能）。
- * * @param {string} word
- * @returns {string|null} 最後のカナ（接続可能な場合）、または null（接続不可な場合、ここでは発生しない想定）
+ * しりとりで使う「カナ」の最後の文字を取得。
+ * 長音符('-')と小さい文字(ゃゅょっ)のルール、および「ン」のルールを適用します。
+ * @param {string} word
+ * @returns {string} 最後のカナ（「ン」で終わる場合は "ン"）
  */
 function getShiritoriLastChar(word) {
     const normalized = word.normalize('NFKC');
@@ -45,7 +47,7 @@ function getShiritoriLastChar(word) {
         effectiveLastChar = normalized.slice(-2, -1);
     }
     
-    // 2. 💡 「ン」の処理: 「ン」で終わる場合は「ン」を返す
+    // 2. 「ン」の処理: 「ン」で終わる場合は「ン」を返す
     if (effectiveLastChar === 'ン' || effectiveLastChar === 'ん') {
         return 'ン'; 
     }
@@ -63,7 +65,6 @@ function getShiritoriLastChar(word) {
             return 'ヨ';
         case 'っ':
         case 'ッ':
-            // 促音は「ツ」に変換
             return 'ツ';
         case 'ぁ':
         case 'ァ':
@@ -81,16 +82,19 @@ function getShiritoriLastChar(word) {
         case 'ォ':
             return 'オ';
         default:
-            // 最後の文字をカタカナ大文字で返す（例: ラ, マ, ベ）
             return effectiveLastChar.toUpperCase();
     }
 }
 
 /**
  * ファイルから単語リストを読み込み、マップを構築
+ * 💡 修正: kokumei_shutomei.txtの場合はファイルを統合する
  */
 function loadWordData() {
-    LIST_FILES.forEach(fileName => {
+    // 最初に個別のファイルを読み込む
+    const individualFiles = [KOKUMEI_KEY, SHUTOMEI_KEY];
+
+    individualFiles.forEach(fileName => {
         try {
             const data = fs.readFileSync(fileName, 'utf8');
             const words = data.split('\n')
@@ -99,20 +103,38 @@ function loadWordData() {
                               .sort(); 
             
             wordLists[fileName] = words;
-            wordMap[fileName] = {};
-
-            words.forEach(word => {
-                const startChar = normalizeWord(word);
-                if (!wordMap[fileName][startChar]) {
-                    wordMap[fileName][startChar] = [];
-                }
-                wordMap[fileName][startChar].push(word);
-            });
-            shiritoriCache[fileName] = {};
             console.log(`Loaded ${words.length} words from ${fileName}.`);
         } catch (err) {
             console.error(`Error loading file ${fileName}:`, err.message);
         }
+    });
+
+    // 💡 統合リストの作成
+    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) {
+        const combinedWords = [
+            ...wordLists[KOKUMEI_KEY], 
+            ...wordLists[SHUTOMEI_KEY]
+        ];
+        // 重複を除去
+        const uniqueWords = [...new Set(combinedWords)].sort();
+        wordLists[KOKUMEI_SHUTOMEI_KEY] = uniqueWords;
+        console.log(`Combined ${uniqueWords.length} unique words for ${KOKUMEI_SHUTOMEI_KEY}.`);
+    } else {
+         console.warn(`Cannot create combined list. Missing ${KOKUMEI_KEY} or ${SHUTOMEI_KEY}.`);
+    }
+
+
+    // 読み込んだすべてのリストについてwordMapを構築
+    Object.keys(wordLists).forEach(listName => {
+        wordMap[listName] = {};
+        wordLists[listName].forEach(word => {
+            const startChar = normalizeWord(word);
+            if (!wordMap[listName][startChar]) {
+                wordMap[listName][startChar] = [];
+            }
+            wordMap[listName][startChar].push(word);
+        });
+        shiritoriCache[listName] = {};
     });
 }
 
@@ -120,9 +142,6 @@ function loadWordData() {
 
 /**
  * パスに必須文字がすべて含まれているかチェック
- * @param {string[]} path - 現在のしりとりパス
- * @param {string[]} requiredChars - 必須文字の配列
- * @returns {boolean} 含まれている場合 true
  */
 function checkRequiredChars(path, requiredChars) {
     if (!requiredChars) return true;
@@ -132,9 +151,6 @@ function checkRequiredChars(path, requiredChars) {
 
 /**
  * パスに含まれてはいけない文字が含まれていないかチェック
- * @param {string[]} path - 現在のしりとりパス
- * @param {string[]} excludeChars - 含めてはいけない文字の配列
- * @returns {boolean} 含まれていない場合 true
  */
 function checkExcludeChars(path, excludeChars) {
     if (!excludeChars || excludeChars.length === 0) return true;
@@ -244,9 +260,8 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
 // ワイルドカード（？）を正規表現に変換するヘルパー関数
 function patternToRegex(pattern) {
-    // 〇は.に変換、その他の正規表現記号をエスケープ
-    let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); // 正規表現文字をエスケープ
-    regexString = regexString.replace(/？/g, '.'); // ワイルドカード '？' を '.' に変換
+    let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
+    regexString = regexString.replace(/？/g, '.'); 
     return new RegExp('^' + regexString + '$');
 }
 
