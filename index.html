@@ -47,6 +47,24 @@
                 <label for="includeChars">必ず含める文字 (任意):</label>
                 <input type="text" id="includeChars" placeholder="例: ス,パ">
             </div>
+            
+            <div class="form-group">
+                <label for="excludeChars">必ず含まない文字 (任意):</label>
+                <input type="text" id="excludeChars" placeholder="例: ン,ワ">
+            </div>
+            
+            <div class="form-group constraint-group">
+                <label>しりとり接続の制約:</label>
+                <div>
+                    <input type="checkbox" id="noPrecedingWord">
+                    <label for="noPrecedingWord">最初の単語の前に続かない</label>
+                </div>
+                <div>
+                    <input type="checkbox" id="noSucceedingWord">
+                    <label for="noSucceedingWord">最後の単語の後に続かない</label>
+                </div>
+            </div>
+            
             <div class="form-group">
                 <label for="wordCountType">単語数:</label>
                 <select id="wordCountType">
@@ -83,7 +101,7 @@
                 </select>
             </div>
             <div class="form-group">
-                <label for="wildcardText">検索文字:</label>
+                <label for="wildcardText">検索文字 (？はワイルドカード):</label>
                 <input type="text" id="wildcardText" placeholder="例: ス？？ル">
             </div>
             <button class="search-btn">検索</button>
@@ -135,7 +153,8 @@
 
         <div id="wildcardShiritoriMode" class="mode-section">
             <h2>？文字指定しりとり検索</h2>
-                        <div class="form-group">
+            <p>最初の単語と最後の単語を**「？」**を使ってパターン指定し、単語数を指定してしりとりパスを**全て**探索します。</p>
+            <div class="form-group">
                 <label for="wildcardShiritoriListName">単語リスト:</label>
                 <select id="wildcardShiritoriListName">
                     <option value="kokumei.txt">国名</option>
@@ -144,11 +163,11 @@
                 </select>
             </div>
             <div class="form-group">
-                <label for="firstWordPattern">最初の単語パターン (必須):</label>
-                <input type="text" id="firstWordPattern" placeholder="例: ？ル？">
+                <label for="firstWordPattern">最初の単語パターン (必須, ？可):</label>
+                <input type="text" id="firstWordPattern" placeholder="例: 日本？" value="日本">
             </div>
             <div class="form-group">
-                <label for="lastWordPattern">最後の単語パターン (任意):</label>
+                <label for="lastWordPattern">最後の単語パターン (任意, ？可):</label>
                 <input type="text" id="lastWordPattern" placeholder="例: ロ？ア">
             </div>
             <div class="form-group">
@@ -159,7 +178,7 @@
                 <label for="wildcardShiritoriIncludeChars">必ず含める文字 (任意):</label>
                 <input type="text" id="wildcardShiritoriIncludeChars" placeholder="例: アフイ" maxlength="50">
             </div>
-            <button class="search-btn">検索</button>
+            <button class="search-btn">しりとりパスをすべて検索</button>
         </div>
         
     </main>
