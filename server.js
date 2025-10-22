@@ -23,28 +23,67 @@ const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
  */
 function normalizeWord(word) {
     if (!word) return '';
-    // 大文字/小文字を統一、濁点/半濁点を除去する処理を想定
-    // 実際の日本語処理ではより複雑なライブラリが必要ですが、ここでは簡略化
+    // ひらがな・カタカナを統一し、濁点・半濁点を考慮しない比較のためのノーマライズ（ここでは簡略化）
     let normalized = word.normalize('NFKC'); 
     return normalized.charAt(0);
 }
 
 /**
- * しりとりで使う「カナ」の最後の文字を取得
- * 例: "ベネズエラ" -> "ラ", "日本" -> "ン" (※「ん」で終わる単語はしりとりNGと仮定)
- * @param {string} word
- * @returns {string} 最後のカナ
+ * 💡 修正: しりとりで使う「カナ」の最後の文字を取得。
+ * 長音符('-')と小さい文字(ゃゅょっ)のルールを適用します。
+ * * 💡 「ン」で終わる単語は「ン」を返します（接続可能）。
+ * * @param {string} word
+ * @returns {string|null} 最後のカナ（接続可能な場合）、または null（接続不可な場合、ここでは発生しない想定）
  */
 function getShiritoriLastChar(word) {
     const normalized = word.normalize('NFKC');
     let lastChar = normalized.slice(-1);
+    let effectiveLastChar = lastChar;
     
-    // 慣例的な「ん」のチェック。ここでは「ん」で終わる単語は接続不可と仮定
-    if (lastChar === 'ン' || lastChar === 'ん') {
-        return null; 
+    // 1. 長音符「ー」の処理
+    if (lastChar === 'ー' && normalized.length > 1) {
+        effectiveLastChar = normalized.slice(-2, -1);
     }
-    // 拗音（ャュョ）や促音（ッ）の前の文字を返すなどの複雑なルールはここでは省略し、最後の文字を返す
-    return lastChar.charAt(0);
+    
+    // 2. 💡 「ン」の処理: 「ン」で終わる場合は「ン」を返す
+    if (effectiveLastChar === 'ン' || effectiveLastChar === 'ん') {
+        return 'ン'; 
+    }
+    
+    // 3. 小さい文字の処理 (ゃゅょっ -> ゃゅょっ)
+    switch (effectiveLastChar) {
+        case 'ゃ':
+        case 'ャ':
+            return 'ヤ';
+        case 'ゅ':
+        case 'ュ':
+            return 'ユ';
+        case 'ょ':
+        case 'ョ':
+            return 'ヨ';
+        case 'っ':
+        case 'ッ':
+            // 促音は「ツ」に変換
+            return 'ツ';
+        case 'ぁ':
+        case 'ァ':
+            return 'ア';
+        case 'ぃ':
+        case 'ィ':
+            return 'イ';
+        case 'ぅ':
+        case 'ゥ':
+            return 'ウ';
+        case 'ぇ':
+        case 'ェ':
+            return 'エ';
+        case 'ぉ':
+        case 'ォ':
+            return 'オ';
+        default:
+            // 最後の文字をカタカナ大文字で返す（例: ラ, マ, ベ）
+            return effectiveLastChar.toUpperCase();
+    }
 }
 
 /**
@@ -57,7 +96,7 @@ function loadWordData() {
             const words = data.split('\n')
                               .map(w => w.trim())
                               .filter(w => w.length > 0)
-                              .sort(); // 結果をソートして表示するためにリストも保持
+                              .sort(); 
             
             wordLists[fileName] = words;
             wordMap[fileName] = {};
@@ -92,7 +131,7 @@ function checkRequiredChars(path, requiredChars) {
 }
 
 /**
- * 💡 新規追加: パスに含まれてはいけない文字が含まれていないかチェック
+ * パスに含まれてはいけない文字が含まれていないかチェック
  * @param {string[]} path - 現在のしりとりパス
  * @param {string[]} excludeChars - 含めてはいけない文字の配列
  * @returns {boolean} 含まれていない場合 true
@@ -108,27 +147,18 @@ function checkExcludeChars(path, excludeChars) {
 
 /**
  * 文字指定しりとり (全通り探索)
- * @param {object} wordMap - 単語マップ
- * @param {string|null} firstChar - 最初の文字
- * @param {string|null} lastChar - 最後の文字
- * @param {number} wordCount - 単語数
- * @param {string[]|null} requiredChars - 必須文字
- * @param {string[]|null} excludeChars - 💡 新規追加: 除外文字
- * @param {boolean} noPrecedingWord - 💡 新規追加: 最初の単語の前に続かない
- * @param {boolean} noSucceedingWord - 💡 新規追加: 最後の単語の後に続かない
- * @returns {string[][]} 見つかったパスの配列
  */
 function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
-    const allWords = Object.values(wordMap).flat(); // すべての単語の配列
+    const allWords = Object.values(wordMap).flat(); 
 
     function backtrack(path, usedWords) {
         if (path.length === wordCount) {
             const lastWord = path[path.length - 1];
             const endChar = getShiritoriLastChar(lastWord);
             
-            // 💡 最後の単語の後に続かない条件をチェック
+            // 最後の単語の後に続かない条件をチェック
             if (noSucceedingWord) {
                 const hasNextWord = (wordMap[endChar] || []).some(word => !usedWords.has(word));
                 if (hasNextWord) {
@@ -138,14 +168,14 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
             if ((lastChar === null || endChar === lastChar) && 
                 checkRequiredChars(path, requiredChars) && 
-                checkExcludeChars(path, excludeChars)) { // 💡 除外文字チェック
+                checkExcludeChars(path, excludeChars)) {
                 allResults.push([...path]);
             }
             return;
         }
         
         const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
-        if (!lastCharOfCurrent) return; // 「ん」で終わるなど、接続不可の場合は終了
+        if (!lastCharOfCurrent) return;
         
         const nextWords = wordMap[lastCharOfCurrent] || [];
 
@@ -163,14 +193,14 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
     // 最初の単語の候補を絞り込む
     let startingWords = firstChar ? (wordMap[firstChar] || []) : allWords;
     
-    // 💡 最初の単語の前に続かない条件をチェック
+    // 最初の単語の前に続かない条件をチェック
     if (noPrecedingWord) {
         startingWords = startingWords.filter(word => {
             const firstCharOfWord = normalizeWord(word);
             
-            // この単語で終わる（つまりこの単語の最初の文字を最後の文字とする）単語が存在しないか確認
+            // この単語で終わる単語が存在しないか確認
             const hasPrecedingWord = allWords.some(prevWord => {
-                if (prevWord === word) return false; // 自分自身を除く
+                if (prevWord === word) return false; 
                 return getShiritoriLastChar(prevWord) === firstCharOfWord;
             });
             return !hasPrecedingWord;
@@ -182,7 +212,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
         if (wordCount === 1) {
              const endChar = getShiritoriLastChar(word);
              
-             // 💡 接続制約をチェック
+             // 接続制約をチェック
              let isNoSucceeding = true;
              if (noSucceedingWord) {
                 isNoSucceeding = !(wordMap[endChar] || []).some(nextWord => nextWord !== word);
@@ -199,7 +229,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
              if (isNoPreceding && isNoSucceeding && (lastChar === null || endChar === lastChar) && 
                  checkRequiredChars([word], requiredChars) && 
-                 checkExcludeChars([word], excludeChars)) { // 💡 除外文字チェック
+                 checkExcludeChars([word], excludeChars)) { 
                  allResults.push([word]);
              }
              continue;
@@ -212,33 +242,27 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 }
 
 
-// 💡 ワイルドカード（？）を正規表現に変換するヘルパー関数
+// ワイルドカード（？）を正規表現に変換するヘルパー関数
 function patternToRegex(pattern) {
     // 〇は.に変換、その他の正規表現記号をエスケープ
-    let regexString = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // 正規表現文字をエスケープ
-    regexString = regexString.replace(/？/g, '.'); // 💡 ワイルドカード '？' を '.' に変換
+    let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); // 正規表現文字をエスケープ
+    regexString = regexString.replace(/？/g, '.'); // ワイルドカード '？' を '.' に変換
     return new RegExp('^' + regexString + '$');
 }
 
 /**
- * ？文字指定しりとり (A*アルゴリズムなどでの最短パス探索はここでは省略し、全探索の機能のみを簡略化して実装)
- * @param {object} wordMap - 単語マップ
- * @param {string} firstWordPattern - 最初の単語のパターン
- * @param {string} lastWordPattern - 最後の単語のパターン
- * @param {number} wordCount - 単語数
- * @param {string[]|null} requiredChars - 必須文字
- * @returns {string[][]} 見つかったパスの配列
+ * ？文字指定しりとり
  */
 function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPattern, wordCount, requiredChars) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     
-    // 💡 ワイルドカード '？' を '〇' で受け取っていると仮定し、正規表現に変換
-    const firstRegex = patternToRegex(firstWordPattern.replace(/〇/g, '？')); // APIの都合上、？を〇で受け取り、ここで？に戻して正規表現変換
+    // 正規表現に変換
+    const firstRegex = patternToRegex(firstWordPattern); 
 
     let lastRegex = null;
     if (lastWordPattern && lastWordPattern.trim() !== '') {
-        lastRegex = patternToRegex(lastWordPattern.replace(/〇/g, '？'));
+        lastRegex = patternToRegex(lastWordPattern);
     }
     
     // 最初に全単語リストを作成
@@ -311,7 +335,7 @@ app.post('/api/shiritori', (req, res) => {
          return res.status(400).json({ error: '単語数は1以上の数字である必要があります。' });
     }
     
-    // 💡 必須文字と除外文字の処理
+    // 必須文字と除外文字の処理
     if (requiredChars && requiredChars.length === 0) {
         requiredChars = null;
     }
@@ -323,9 +347,7 @@ app.post('/api/shiritori', (req, res) => {
 
     let results = [];
     
-    // 出力形式が件数カウントの場合は、専用の関数を使う（ここでは省略し、パス探索後に集計するロジックに置き換えます）
     if (outputType === 'firstCharCount' || outputType === 'lastCharCount') {
-        // パス探索は必須
         if (wordCount === 'shortest' || Array.isArray(wordCount)) {
             return res.status(400).json({ error: '件数カウントは最短または単語数指定モードでは現在サポートされていません。' });
         }
@@ -350,7 +372,6 @@ app.post('/api/shiritori', (req, res) => {
         }
         
     } else { // outputType === 'path'
-        // 最短パス探索はここでは省略し、wordCountが'shortest'または配列の場合はエラーを返す
         if (wordCount === 'shortest' || Array.isArray(wordCount)) {
              return res.status(400).json({ error: '最短パスまたは単語数指定の検索は現在実装されていません。' });
         }
@@ -371,8 +392,7 @@ app.post('/api/wildcard_search', (req, res) => {
         return res.status(400).json({ error: '無効な入力です。' });
     }
 
-    // 💡 以前「〇」に変換していたワイルドカードを「？」に戻して、正規表現に変換
-    const regex = patternToRegex(searchText.replace(/〇/g, '？'));
+    const regex = patternToRegex(searchText);
     
     const matches = words.filter(word => regex.test(word));
     return res.json({ wildcardMatches: matches });
@@ -404,7 +424,6 @@ app.post('/api/wildcard_shiritori', (req, res) => {
         requiredChars = null;
     }
 
-    // 💡 以前「〇」に変換していたワイルドカードを「？」に戻して、パターン処理に渡す
     const results = findWildcardShiritoriCombinations(map, firstWordPattern, lastWordPattern, wordCount, requiredChars);
     
     return res.json({ results });
