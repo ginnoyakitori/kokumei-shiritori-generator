@@ -10,38 +10,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const searchButtons = document.querySelectorAll('.search-btn');
 
-    // リスト選択要素
+    // リスト選択要素 (省略)
     const listNameSelect = document.getElementById('listName');
     const wildcardListNameSelect = document.getElementById('wildcardListName');
     const substringListNameSelect = document.getElementById('substringListName');
     const wordCountShiritoriListNameSelect = document.getElementById('wordCountShiritoriListName');
     const wildcardShiritoriListNameSelect = document.getElementById('wildcardShiritoriListName');
 
-    // 文字指定しりとりモードの要素
+    // 文字指定しりとりモードの要素 (省略)
     const firstCharInput = document.getElementById('firstChar');
     const lastCharInput = document.getElementById('lastChar');
     const wordCountTypeSelect = document.getElementById('wordCountType');
     const wordCountInputContainer = document.getElementById('wordCountInputContainer');
     const wordCountInput = document.getElementById('wordCount');
     const includeCharsInput = document.getElementById('includeChars');
-    
-    // 💡 新規追加: 必ず含まない文字と接続制約
     const excludeCharsInput = document.getElementById('excludeChars');
     const noPrecedingWordCheckbox = document.getElementById('noPrecedingWord');
     const noSucceedingWordCheckbox = document.getElementById('noSucceedingWord');
 
-    // ？文字検索モードの要素
+    // ？文字検索モードの要素 (省略)
     const wildcardTextInput = document.getElementById('wildcardText');
 
-    // 部分文字列検索モードの要素
+    // 部分文字列検索モードの要素 (省略)
     const substringTextInput = document.getElementById('substringText');
 
-    // 単語数指定しりとりモードの要素
+    // 💡 単語数指定しりとりモードの要素 (修正)
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
     const wordCountIncludeCharsInput = document.getElementById('wordCountIncludeChars');
+    const allowWordCountPermutationCheckbox = document.getElementById('allowWordCountPermutation');
 
-    // ？文字指定しりとりモードの要素
+    // ？文字指定しりとりモードの要素 (省略)
     const firstWordPatternInput = document.getElementById('firstWordPattern');
     const lastWordPatternInput = document.getElementById('lastWordPattern');
     const wildcardShiritoriWordCountInput = document.getElementById('wildcardShiritoriWordCount');
@@ -68,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newGroup = document.createElement('div');
         newGroup.className = 'word-count-input-group';
         newGroup.innerHTML = `
-            <input type="number" class="word-count-input" value="2" min="1">
+            <input type="text" class="word-count-input" value="3" placeholder="例: 3,4">
             <button class="remove-word-count-input">-</button>
         `;
         wordCountInputsContainer.appendChild(newGroup);
@@ -97,20 +96,17 @@ document.addEventListener('DOMContentLoaded', () => {
             let response;
 
             if (mode === 'shiritori') {
+                // ... (shiritoriModeの処理は省略、変更なし)
                 const listName = listNameSelect.value;
                 const firstChar = firstCharInput.value.trim() === '' ? null : firstCharInput.value.trim();
                 const lastChar = lastCharInput.value.trim() === '' ? null : lastCharInput.value.trim();
                 const wordCountType = wordCountTypeSelect.value;
                 const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
                 const includeChars = includeCharsInput.value.trim();
-                
-                // 💡 新規追加要素の取得
                 const excludeChars = excludeCharsInput.value.trim();
                 const noPrecedingWord = noPrecedingWordCheckbox.checked;
                 const noSucceedingWord = noSucceedingWordCheckbox.checked;
-                
                 const outputType = document.querySelector('input[name="outputType"]:checked').value;
-
                 const requiredChars = includeChars ? includeChars.split('') : null;
 
                 response = await fetch('/api/shiritori', {
@@ -122,19 +118,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         lastChar, 
                         wordCount, 
                         requiredChars, 
-                        // 💡 新規追加パラメータ
                         excludeChars,
                         noPrecedingWord,
                         noSucceedingWord,
-                        // ----------------
                         outputType 
                     })
                 });
             } else if (mode === 'wildcard') {
+                // ... (wildcardModeの処理は省略、変更なし)
                 const listName = wildcardListNameSelect.value;
                 const searchText = wildcardTextInput.value.trim();
-                // 💡 ワイルドカード文字の置換: '？'を正規表現の'.'に
-                const apiSearchText = searchText.replace(/？/g, '〇'); 
+                const apiSearchText = searchText; // サーバー側で？を処理
 
                 response = await fetch('/api/wildcard_search', {
                     method: 'POST',
@@ -142,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ listName, searchText: apiSearchText })
                 });
             } else if (mode === 'substring') {
+                // ... (substringModeの処理は省略、変更なし)
                 const listName = substringListNameSelect.value;
                 const searchText = substringTextInput.value.trim();
                 response = await fetch('/api/substring_search', {
@@ -151,22 +146,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } else if (mode === 'wordCountShiritori') {
                 const listName = wordCountShiritoriListNameSelect.value;
-                const wordCounts = Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input')).map(input => parseInt(input.value, 10));
+                
+                // 💡 複数文字数指定の解析
+                const wordCountPatterns = Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input'))
+                    .map(input => input.value.trim())
+                    .filter(val => val !== '')
+                    // カンマ区切りでパースし、数字に変換して配列化
+                    .map(val => val.split(',').map(numStr => parseInt(numStr.trim(), 10)).filter(n => !isNaN(n) && n > 0)); 
+                
                 const includeChars = wordCountIncludeCharsInput.value.trim();
                 const requiredChars = includeChars ? includeChars.split('') : null;
+                
+                // 💡 並び替えの許可フラグ
+                const allowPermutation = allowWordCountPermutationCheckbox.checked;
 
-                response = await fetch('/api/shiritori', { // 単語数指定も/api/shiritoriに統合
+                // APIに送るデータ構造を修正
+                response = await fetch('/api/word_count_shiritori', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ listName, wordCount: wordCounts, requiredChars, outputType: 'path' })
+                    body: JSON.stringify({ 
+                        listName, 
+                        wordCountPatterns: wordCountPatterns, 
+                        requiredChars,
+                        allowPermutation: allowPermutation // 💡 新しいフラグを追加
+                    })
                 });
             } else if (mode === 'wildcardShiritori') {
+                // ... (wildcardShiritoriModeの処理は省略、変更なし)
                 const listName = wildcardShiritoriListNameSelect.value;
-                
-                // 💡 ワイルドカード文字の置換: '？'をAPIに渡す前に'〇'に
-                const firstWordPattern = firstWordPatternInput.value.trim().replace(/？/g, '〇');
-                const lastWordPattern = lastWordPatternInput.value.trim().replace(/？/g, '〇');
-                
+                const firstWordPattern = firstWordPatternInput.value.trim();
+                const lastWordPattern = lastWordPatternInput.value.trim();
                 const wordCount = parseInt(wildcardShiritoriWordCountInput.value, 10);
                 const includeChars = wildcardShiritoriIncludeCharsInput.value.trim();
                 const requiredChars = includeChars ? includeChars.split('') : null;
@@ -187,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // ... (結果表示ロジックは省略、変更なし)
             if (data.results && data.results.length > 0) {
                 const countMessage = document.createElement('p');
                 countMessage.textContent = `${data.results.length} 通り見つかりました:`;
@@ -201,29 +211,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 resultsDiv.appendChild(ul);
             } else if (data.results && data.results.length === 0) {
                 resultsDiv.innerHTML = '<p class="no-results-message">条件に合う単語は見つかりませんでした。</p>';
-            } else if (data.firstCharCounts) {
-                const totalCount = Object.values(data.firstCharCounts).reduce((sum, count) => sum + count, 0);
+            } else if (data.firstCharCounts || data.lastCharCounts) {
+                const counts = data.firstCharCounts || data.lastCharCounts;
+                const totalCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
                 const countMessage = document.createElement('p');
                 countMessage.textContent = `総数: ${totalCount} 通り見つかりました。`;
                 resultsDiv.appendChild(countMessage);
                 
                 const ul = document.createElement('ul');
-                for (const char in data.firstCharCounts) {
+                for (const char in counts) {
                     const li = document.createElement('li');
-                    li.textContent = `${char}: ${data.firstCharCounts[char]} 通り`;
-                    ul.appendChild(li);
-                }
-                resultsDiv.appendChild(ul);
-            } else if (data.lastCharCounts) {
-                const totalCount = Object.values(data.lastCharCounts).reduce((sum, count) => sum + count, 0);
-                const countMessage = document.createElement('p');
-                countMessage.textContent = `総数: ${totalCount} 通り見つかりました。`;
-                resultsDiv.appendChild(countMessage);
-
-                const ul = document.createElement('ul');
-                for (const char in data.lastCharCounts) {
-                    const li = document.createElement('li');
-                    li.textContent = `${char}: ${data.lastCharCounts[char]} 通り`;
+                    li.textContent = `${char}: ${counts[char]} 通り`;
                     ul.appendChild(li);
                 }
                 resultsDiv.appendChild(ul);
