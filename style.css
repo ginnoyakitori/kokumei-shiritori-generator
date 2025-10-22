@@ -2,7 +2,8 @@ body {
     font-family: 'Arial', sans-serif;
     background-color: #f0f2f5;
     color: #333;
-    line-height: 1.6;
+    /* 💡 修正: 行の高さを狭くする */
+    line-height: 1.4; 
     margin: 0;
     padding: 0;
 }
@@ -18,13 +19,18 @@ body {
 
 header {
     text-align: center;
-    padding-bottom: 20px;
+    /* 💡 修正: 上下のパディングを減らす */
+    padding-bottom: 15px; 
     border-bottom: 2px solid #e0e0e0;
-    margin-bottom: 20px;
+    /* 💡 修正: 下のマージンを減らす */
+    margin-bottom: 15px; 
 }
 
 h1 {
     color: #444;
+    /* 💡 修正: 上下のマージンを減らす */
+    margin-top: 0.5em; 
+    margin-bottom: 0.5em;
 }
 
 .mode-selector {
@@ -45,21 +51,25 @@ h1 {
 }
 
 h2 {
+    /* 💡 修正: 上のマージンは0のまま、下を削減 */
     margin-top: 0;
     color: #555;
     border-bottom: 1px solid #ccc;
     padding-bottom: 10px;
-    margin-bottom: 20px;
+    /* 💡 修正: 下のマージンを減らす */
+    margin-bottom: 15px; 
 }
 
 .form-group {
-    margin-bottom: 15px;
+    /* 💡 修正: form-group間のマージンを少し削減 */
+    margin-bottom: 12px; 
 }
 
 label {
     display: block;
     font-weight: bold;
-    margin-bottom: 5px;
+    /* 💡 修正: ラベルと入力欄の間の空白を狭くする */
+    margin-bottom: 3px; 
 }
 
 input[type="text"],
@@ -71,6 +81,8 @@ select {
     border-radius: 5px;
     box-sizing: border-box;
     font-size: 16px;
+    /* 💡 追記: 要素自体のline-heightを調整してテキスト上下の空白を詰める */
+    line-height: 1.2; 
 }
 
 .search-btn,
@@ -83,6 +95,8 @@ select {
     cursor: pointer;
     font-size: 16px;
     transition: background-color 0.3s, transform 0.1s;
+    /* 💡 追記: ボタン内のテキスト上下の空白を詰める */
+    line-height: 1.2; 
 }
 
 .search-btn {
@@ -157,9 +171,22 @@ select {
     border-top: 2px dashed #ccc;
 }
 
+.results-container h3 {
+    /* 💡 修正: 結果セクションの見出しの上下の空白を詰める */
+    margin-top: 0.5em;
+    margin-bottom: 1em; 
+    color: #444;
+}
+
 #results h3 {
     margin-top: 0;
     color: #444;
+}
+
+/* 💡 新規追加: 結果エリアの段落（例: 件数表示）の上下の空白を狭くする */
+#results p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
 }
 
 #results ul {
@@ -171,7 +198,8 @@ select {
     background-color: #f0f8ff;
     border: 1px solid #e0eaf4;
     padding: 10px 15px;
-    margin-bottom: 8px;
+    /* 💡 修正: リスト項目間の空白を狭くする */
+    margin-bottom: 5px; 
     border-radius: 5px;
     transition: transform 0.2s, box-shadow 0.2s;
     animation: fadeIn 0.5s ease-in-out;
