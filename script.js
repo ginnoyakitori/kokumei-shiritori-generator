@@ -25,11 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const wordCountTypeSelect = document.getElementById('wordCountType');
     const wordCountInputContainer = document.getElementById('wordCountInputContainer');
     const wordCountInput = document.getElementById('wordCount');
-    const includeCharsInput = document.getElementById('includeChars');
+    const includeCharsInput = document.getElementById('includeChars'); // 💡 修正対象
     const excludeCharsInput = document.getElementById('excludeChars');
     const noPrecedingWordCheckbox = document.getElementById('noPrecedingWord');
     const noSucceedingWordCheckbox = document.getElementById('noSucceedingWord');
-    // 💡 新しいチェックボックス
     const requiredCharExactlyCheckbox = document.getElementById('requiredCharExactly');
 
     // ？文字検索モードの要素
@@ -43,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const addWordCountInputButton = document.getElementById('addWordCountInput');
     const wordCountIncludeCharsInput = document.getElementById('wordCountIncludeChars');
     const allowWordCountPermutationCheckbox = document.getElementById('allowWordCountPermutation');
-    // 💡 新しいチェックボックス
     const wordCountRequiredCharExactlyCheckbox = document.getElementById('wordCountRequiredCharExactly');
 
 
@@ -52,7 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const lastWordPatternInput = document.getElementById('lastWordPattern');
     const wildcardShiritoriWordCountInput = document.getElementById('wildcardShiritoriWordCount');
     const wildcardShiritoriIncludeCharsInput = document.getElementById('wildcardShiritoriIncludeChars');
-    // 💡 新しいチェックボックス
     const wildcardRequiredCharExactlyCheckbox = document.getElementById('wildcardRequiredCharExactly');
     
 
@@ -106,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 結果表示ロジック ---
+    // --- 結果表示ロジック (省略) ---
     const displayResults = (data, mode) => {
         resultsDiv.innerHTML = '';
         
@@ -184,10 +181,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             try {
                 if (mode === 'shiritori') {
-                    const includeChars = includeCharsInput.value.trim();
-                    const requiredChars = includeChars ? includeChars.split(',').map(c => c.trim()).filter(c => c) : null;
+                    const includeCharsText = includeCharsInput.value.trim();
+                    // 💡 修正: カンマ区切りで入力された文字を配列に変換
+                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c) : null;
                     
-                    // 💡 requiredCharModeの取得
                     const requiredCharMode = requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
                     requestBody = { 
@@ -195,12 +192,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         firstChar: firstCharInput.value.trim() || null, 
                         lastChar: lastCharInput.value.trim() || null, 
                         wordCount: wordCountTypeSelect.value === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest', 
-                        requiredChars: requiredChars, 
+                        requiredChars: requiredChars, // 💡 修正後の変数を使用
                         excludeChars: excludeCharsInput.value.trim(),
                         noPrecedingWord: noPrecedingWordCheckbox.checked,
                         noSucceedingWord: noSucceedingWordCheckbox.checked,
                         outputType: document.querySelector('input[name="outputType"]:checked').value,
-                        requiredCharMode: requiredCharMode // 💡 追加
+                        requiredCharMode: requiredCharMode 
                     };
                     apiPath = '/api/shiritori';
 
@@ -219,26 +216,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                 } else if (mode === 'wordCountShiritori') {
-                    const includeChars = wordCountIncludeCharsInput.value.trim();
-                    const requiredChars = includeChars ? includeChars.split(',').map(c => c.trim()).filter(c => c) : null;
+                    const includeCharsText = wordCountIncludeCharsInput.value.trim();
+                    // 💡 修正: カンマ区切りで入力された文字を配列に変換
+                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c) : null;
                     
-                    // 💡 requiredCharModeの取得
                     const requiredCharMode = wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
                     requestBody = { 
                         listName: wordCountShiritoriListNameSelect.value, 
                         wordCountPatterns: getWordCountPatterns(), 
-                        requiredChars: requiredChars,
+                        requiredChars: requiredChars, // 💡 修正後の変数を使用
                         allowPermutation: allowWordCountPermutationCheckbox.checked,
-                        requiredCharMode: requiredCharMode // 💡 追加
+                        requiredCharMode: requiredCharMode 
                     };
                     apiPath = '/api/word_count_shiritori';
                     
                 } else if (mode === 'wildcardShiritori') {
-                    const includeChars = wildcardShiritoriIncludeCharsInput.value.trim();
-                    const requiredChars = includeChars ? includeChars.split('').map(c => c.trim()).filter(c => c) : null;
+                    const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
+                    // 💡 修正: カンマ区切りで入力された文字を配列に変換 (？文字指定ではカンマ区切りでの入力は想定外かもしれませんが、安全のため対応)
+                    const requiredChars = includeCharsText ? includeCharsText.split('').map(c => c.trim()).filter(c => c) : null;
                     
-                    // 💡 requiredCharModeの取得
                     const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
                     requestBody = { 
@@ -246,8 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         firstWordPattern: firstWordPatternInput.value.trim(),
                         lastWordPattern: lastWordPatternInput.value.trim() || null,
                         wordCount: parseInt(wildcardShiritoriWordCountInput.value, 10),
-                        requiredChars: requiredChars,
-                        requiredCharMode: requiredCharMode // 💡 追加
+                        requiredChars: requiredChars, // 💡 修正後の変数を使用
+                        requiredCharMode: requiredCharMode 
                     };
                     apiPath = '/api/wildcard_shiritori';
                 }
@@ -259,7 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify(requestBody)
                     });
                     
-                    const data = await response.json();
+                    // エラーレスポンスもJSONとして処理するため、try-catchの外に出す
+                    const data = await response.json(); 
                     displayResults(data, mode);
                 } else {
                     displayResults({ error: '無効な検索モードです。' }, mode);
