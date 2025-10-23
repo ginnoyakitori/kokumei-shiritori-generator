@@ -87,11 +87,51 @@ function loadWordData() {
     });
 }
 
-function checkRequiredChars(path, requiredChars) {
-    if (!requiredChars) return true;
+/**
+ * 💡 修正: 必須文字の出現回数とモードをチェックするロジックを追加
+ * @param {string[]} path - しりとりパス (単語の配列)
+ * @param {string[]|null} requiredChars - 必須文字の配列 (重複あり)
+ * @param {string} requiredCharMode - 'atLeast' (指定回数以上) または 'exactly' (ちょうど指定回数)
+ * @returns {boolean}
+ */
+function checkRequiredChars(path, requiredChars, requiredCharMode) {
+    if (!requiredChars || requiredChars.length === 0) return true;
+    
     const allCharsInPath = path.join('');
-    return requiredChars.every(char => allCharsInPath.includes(char));
+    
+    // 必須文字とその回数をカウント
+    const requiredCounts = requiredChars.reduce((acc, char) => {
+        acc[char] = (acc[char] || 0) + 1;
+        return acc;
+    }, {});
+    
+    // パス内の文字の出現回数をカウント
+    const pathCounts = {};
+    for (const char of allCharsInPath) {
+        pathCounts[char] = (pathCounts[char] || 0) + 1;
+    }
+    
+    // チェックロジック
+    for (const char in requiredCounts) {
+        const requiredCount = requiredCounts[char];
+        const actualCount = pathCounts[char] || 0;
+        
+        if (requiredCharMode === 'exactly') {
+            // ちょうど指定回数
+            if (actualCount !== requiredCount) {
+                return false;
+            }
+        } else { // 'atLeast' (デフォルト)
+            // 指定回数以上
+            if (actualCount < requiredCount) {
+                return false;
+            }
+        }
+    }
+    
+    return true;
 }
+
 
 function checkExcludeChars(path, excludeChars) {
     if (!excludeChars || excludeChars.length === 0) return true;
@@ -145,7 +185,8 @@ function generateCartesianProduct(arr) {
 
 // === 探索関数 ===
 
-function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord) {
+// 💡 修正: requiredCharModeを引数に追加
+function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     const allWords = Object.values(wordMap).flat(); 
@@ -163,7 +204,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
             }
 
             if ((lastChar === null || endChar === lastChar) && 
-                checkRequiredChars(path, requiredChars) && 
+                checkRequiredChars(path, requiredChars, requiredCharMode) && // 💡 checkRequiredCharsにモードを渡す
                 checkExcludeChars(path, excludeChars)) {
                 allResults.push([...path]);
             }
@@ -218,7 +259,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
              }
 
              if (isNoPreceding && isNoSucceeding && (lastChar === null || endChar === lastChar) && 
-                 checkRequiredChars([word], requiredChars) && 
+                 checkRequiredChars([word], requiredChars, requiredCharMode) && // 💡 checkRequiredCharsにモードを渡す
                  checkExcludeChars([word], excludeChars)) { 
                  allResults.push([word]);
              }
@@ -232,7 +273,8 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 }
 
 
-function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation) {
+// 💡 修正: requiredCharModeを引数に追加
+function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode) {
     let allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     
@@ -254,7 +296,7 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
 
         function backtrack(path, usedWords, patternIndex) {
             if (path.length === totalWordCount) {
-                if (checkRequiredChars(path, requiredChars)) {
+                if (checkRequiredChars(path, requiredChars, requiredCharMode)) { // 💡 checkRequiredCharsにモードを渡す
                     allResults.push([...path]);
                 }
                 return;
@@ -306,7 +348,8 @@ function patternToRegex(pattern) {
     return new RegExp('^' + regexString + '$');
 }
 
-function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPattern, wordCount, requiredChars) {
+// 💡 修正: requiredCharModeを引数に追加
+function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     
@@ -326,7 +369,7 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
             const lastWord = path[path.length - 1];
             
             if ((!lastRegex || lastRegex.test(lastWord)) && 
-                checkRequiredChars(path, requiredChars)) {
+                checkRequiredChars(path, requiredChars, requiredCharMode)) { // 💡 checkRequiredCharsにモードを渡す
                 allResults.push([...path]);
             }
             return;
@@ -350,7 +393,7 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
 
     for (const word of startingWords) {
         if (wordCount === 1) {
-            if ((!lastRegex || lastRegex.test(word)) && checkRequiredChars([word], requiredChars)) {
+            if ((!lastRegex || lastRegex.test(word)) && checkRequiredChars([word], requiredChars, requiredCharMode)) { // 💡 checkRequiredCharsにモードを渡す
                 allResults.push([word]);
             }
             continue;
@@ -367,9 +410,10 @@ function findWildcardShiritoriCombinations(wordMap, firstWordPattern, lastWordPa
 // サーバー起動時にデータをロード
 loadWordData();
 
-// 文字指定しりとり検索 (終了文字件数ソートロジックを修正)
+// 文字指定しりとり検索 (終了文字件数ソートロジックを修正 & requiredCharMode対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType } = req.body;
+    // 💡 requiredCharModeを追加で取得
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -386,7 +430,15 @@ app.post('/api/shiritori', (req, res) => {
     
     if (requiredChars && requiredChars.length === 0) {
         requiredChars = null;
+    } else if (requiredChars && Array.isArray(requiredChars)) {
+        // 大文字に正規化 (必須文字も探索結果も大文字で比較するため)
+        requiredChars = requiredChars.map(char => char.toUpperCase());
     }
+
+    // requiredCharModeのデフォルト設定 ('atLeast' または クライアントから渡された値)
+    const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
+
+
     if (excludeChars && excludeChars.trim() !== '') {
         excludeChars = excludeChars.split('');
     } else {
@@ -400,7 +452,8 @@ app.post('/api/shiritori', (req, res) => {
             return res.status(400).json({ error: '件数カウントは最短または単語数指定モードでは現在サポートされていません。' });
         }
         
-        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord);
+        // 💡 探索関数にmodeを渡す
+        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
         
         const counts = {};
         results.forEach(path => {
@@ -417,9 +470,7 @@ app.post('/api/shiritori', (req, res) => {
         const collator = new Intl.Collator('ja', { sensitivity: 'base' });
         
         const sortedCounts = Object.entries(counts)
-            // 50音順にキー(char)でソート
             .sort(([charA], [charB]) => collator.compare(charA, charB))
-            // オブジェクトに戻す (Node.jsの仕様により順序が保持される)
             .reduce((obj, [key, value]) => {
                 obj[key] = value;
                 return obj;
@@ -427,10 +478,8 @@ app.post('/api/shiritori', (req, res) => {
 
         
         if (outputType === 'firstCharCount') {
-            // 開始文字別の件数は50音順にソートして返す
             return res.json({ firstCharCounts: sortedCounts });
         } else {
-            // 終了文字別の件数は50音順にソートして返す
             return res.json({ lastCharCounts: sortedCounts });
         }
         
@@ -439,15 +488,17 @@ app.post('/api/shiritori', (req, res) => {
              return res.status(400).json({ error: '最短パスまたは単語数指定の検索は現在実装されていません。' });
         }
         
-        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord);
+        // 💡 探索関数にmodeを渡す
+        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
         return res.json({ results });
     }
 });
 
 
-// 単語数指定しりとり (既存)
+// 単語数指定しりとり (requiredCharMode対応)
 app.post('/api/word_count_shiritori', (req, res) => {
-    let { listName, wordCountPatterns, requiredChars, allowPermutation } = req.body;
+    // 💡 requiredCharModeを追加で取得
+    let { listName, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode } = req.body;
     const map = wordMap[listName];
 
     if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
@@ -461,10 +512,16 @@ app.post('/api/word_count_shiritori', (req, res) => {
 
     if (requiredChars && requiredChars.length === 0) {
         requiredChars = null;
+    } else if (requiredChars && Array.isArray(requiredChars)) {
+        requiredChars = requiredChars.map(char => char.toUpperCase());
     }
 
+    const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
+
+
     try {
-        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation);
+        // 💡 探索関数にmodeを渡す
+        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode);
         return res.json({ results });
     } catch (e) {
         console.error("Error in word count shiritori:", e);
@@ -501,9 +558,10 @@ app.post('/api/substring_search', (req, res) => {
     return res.json({ substringMatches: matches });
 });
 
-// ？文字指定しりとり検索 (既存)
+// ？文字指定しりとり検索 (requiredCharMode対応)
 app.post('/api/wildcard_shiritori', (req, res) => {
-    let { listName, firstWordPattern, lastWordPattern, wordCount, requiredChars } = req.body;
+    // 💡 requiredCharModeを追加で取得
+    let { listName, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode } = req.body;
     const map = wordMap[listName];
 
     if (!map || !firstWordPattern || isNaN(wordCount) || wordCount < 1) {
@@ -512,9 +570,15 @@ app.post('/api/wildcard_shiritori', (req, res) => {
     
     if (requiredChars && requiredChars.length === 0) {
         requiredChars = null;
+    } else if (requiredChars && Array.isArray(requiredChars)) {
+        requiredChars = requiredChars.map(char => char.toUpperCase());
     }
 
-    const results = findWildcardShiritoriCombinations(map, firstWordPattern, lastWordPattern, wordCount, requiredChars);
+    const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
+
+
+    // 💡 探索関数にmodeを渡す
+    const results = findWildcardShiritoriCombinations(map, firstWordPattern, lastWordPattern, wordCount, requiredChars, mode);
     
     return res.json({ results });
 });
