@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const wordCountTypeSelect = document.getElementById('wordCountType');
     const wordCountInputContainer = document.getElementById('wordCountInputContainer');
     const wordCountInput = document.getElementById('wordCount');
-    const includeCharsInput = document.getElementById('includeChars'); // 💡 修正対象
+    const includeCharsInput = document.getElementById('includeChars');
     const excludeCharsInput = document.getElementById('excludeChars');
     const noPrecedingWordCheckbox = document.getElementById('noPrecedingWord');
     const noSucceedingWordCheckbox = document.getElementById('noSucceedingWord');
@@ -182,8 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 if (mode === 'shiritori') {
                     const includeCharsText = includeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字を配列に変換
-                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c) : null;
+                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
+                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
                     
                     const requiredCharMode = requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
@@ -217,8 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (mode === 'wordCountShiritori') {
                     const includeCharsText = wordCountIncludeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字を配列に変換
-                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c) : null;
+                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
+                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
                     
                     const requiredCharMode = wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
@@ -233,9 +233,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                 } else if (mode === 'wildcardShiritori') {
                     const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字を配列に変換 (？文字指定ではカンマ区切りでの入力は想定外かもしれませんが、安全のため対応)
-                    const requiredChars = includeCharsText ? includeCharsText.split('').map(c => c.trim()).filter(c => c) : null;
-                    
+                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
+                    // 注: このモードのプレースホルダは「例: アフイ」で区切り文字がありません。
+                    // ユーザーがカンマ区切りで入力することを許容し、そうでなければ1文字ずつ区切るロジックに変更することも可能ですが、
+                    // 今回は他のモードに合わせてカンマ区切りを基本とします。（HTMLのplaceholderを修正推奨）
+                    // ここでは、一旦、**カンマ区切りで処理**します。
+                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
+
                     const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
                     requestBody = { 
@@ -256,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify(requestBody)
                     });
                     
-                    // エラーレスポンスもJSONとして処理するため、try-catchの外に出す
                     const data = await response.json(); 
                     displayResults(data, mode);
                 } else {
