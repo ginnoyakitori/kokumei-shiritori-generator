@@ -11,7 +11,6 @@ let wordLists = {};
 let wordMap = {}; 
 const shiritoriCache = {};
 
-// NOTE: これらのファイルがサーバーと同じディレクトリにあることを前提とします
 const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
 const KOKUMEI_KEY = 'kokumei.txt';
 const SHUTOMEI_KEY = 'shutomei.txt';
@@ -244,15 +243,6 @@ class PriorityQueue {
 
 /**
  * 💡 最短「文字数」で到達するすべてのパスを探索 (ダイクストラ法)
- * @param {Object} wordMap - 単語マップ
- * @param {string|null} firstChar - 最初の文字
- * @param {string|null} lastChar - 最後の文字
- * @param {string[]|null} requiredChars - 必須文字/部分文字列
- * @param {string[]|null} excludeChars - 除外文字/部分文字列
- * @param {boolean} noPrecedingWord - 前の単語がないか
- * @param {boolean} noSucceedingWord - 次の単語がないか
- * @param {string} requiredCharMode - 'atLeast' または 'exactly'
- * @returns {string[][]}
  */
 function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode) {
     const allWords = Object.values(wordMap).flat(); 
@@ -281,7 +271,6 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
         const length = word.length;
         if (!minPathLength[word] || length < minPathLength[word]) {
             minPathLength[word] = length;
-            // ダイクストラ法では、path全体を管理して、最短文字数パスを探索
             pq.push([length, word, [word]]);
         }
     }
@@ -382,8 +371,20 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
         }
     }
     
+    // 🚨 重複排除のロジックをここに追加 🚨
+    const uniquePaths = [];
+    const seenPaths = new Set();
+    
+    shortestPaths.forEach(path => {
+        const pathKey = path.join(',');
+        if (!seenPaths.has(pathKey)) {
+            seenPaths.add(pathKey);
+            uniquePaths.push(path);
+        }
+    });
+    
     // ソートして返却
-    return shortestPaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
+    return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
 
