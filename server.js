@@ -11,6 +11,7 @@ let wordLists = {};
 let wordMap = {}; 
 const shiritoriCache = {};
 
+// NOTE: これらのファイルがサーバーと同じディレクトリにあることを前提とします
 const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
 const KOKUMEI_KEY = 'kokumei.txt';
 const SHUTOMEI_KEY = 'shutomei.txt';
@@ -87,16 +88,12 @@ function loadWordData() {
 }
 
 /**
- * 💡 必須文字のチェックを部分文字列の出現回数ベースで実行
- * @param {string[]} path - しりとりパス (単語の配列)
- * @param {string[]|null} requiredChars - 必須文字/部分文字列の配列
- * @param {string} requiredCharMode - 'atLeast' または 'exactly'
- * @returns {boolean}
+ * 必須文字のチェックを部分文字列の出現回数ベースで実行
  */
 function checkRequiredChars(path, requiredChars, requiredCharMode) {
     if (!requiredChars || requiredChars.length === 0) return true;
     
-    const allWordsInPath = path.join(''); // パスを一つの文字列として扱う
+    const allWordsInPath = path.join(''); 
     
     const requiredCounts = requiredChars.reduce((acc, char) => {
         acc[char] = (acc[char] || 0) + 1;
@@ -134,7 +131,7 @@ function checkExcludeChars(path, excludeChars) {
 }
 
 
-// === 探索補助関数 (中略) ===
+// === 探索補助関数 (順列・直積) ===
 
 function getPermutations(arr) {
     if (arr.length === 0) return [[]];
@@ -179,8 +176,74 @@ function generateCartesianProduct(arr) {
 
 // === 探索関数 ===
 
+// 💡 最小ヒープを模したシンプルな優先度付きキュー (ダイクストラ法用)
+// [totalLength, word, path] の配列を管理
+class PriorityQueue {
+    // 比較関数: totalLength (a[0]) が小さい方を優先
+    constructor(comparator = (a, b) => a[0] < b[0]) {
+        this._heap = [];
+        this._comparator = comparator;
+    }
+    size() {
+        return this._heap.length;
+    }
+    isEmpty() {
+        return this.size() === 0;
+    }
+    // キューの末尾に追加し、バブルアップして順序を維持
+    push(value) {
+        this._heap.push(value);
+        this._bubbleUp(this._heap.length - 1);
+    }
+    // 最小要素を取り出し、バブルダウンして順序を維持
+    pop() {
+        if (this.isEmpty()) return undefined;
+        const top = this._heap[0];
+        const bottom = this._heap.pop();
+        if (!this.isEmpty()) {
+            this._heap[0] = bottom;
+            this._bubbleDown(0);
+        }
+        return top;
+    }
+    _bubbleUp(index) {
+        while (index > 0) {
+            const parentIndex = Math.floor((index - 1) / 2);
+            if (this._comparator(this._heap[index], this._heap[parentIndex])) {
+                [this._heap[index], this._heap[parentIndex]] = [this._heap[parentIndex], this._heap[index]];
+                index = parentIndex;
+            } else {
+                break;
+            }
+        }
+    }
+    _bubbleDown(index) {
+        let lastIndex = this.size() - 1;
+        while (true) {
+            let leftIndex = index * 2 + 1;
+            let rightIndex = index * 2 + 2;
+            let swapIndex = index;
+
+            if (leftIndex <= lastIndex && this._comparator(this._heap[leftIndex], this._heap[swapIndex])) {
+                swapIndex = leftIndex;
+            }
+            if (rightIndex <= lastIndex && this._comparator(this._heap[rightIndex], this._heap[swapIndex])) {
+                swapIndex = rightIndex;
+            }
+
+            if (swapIndex !== index) {
+                [this._heap[index], this._heap[swapIndex]] = [this._heap[swapIndex], this._heap[index]];
+                index = swapIndex;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+
 /**
- * 💡 最短単語数で到達するすべてのパスを探索 (BFS) - 単語数1の分離処理
+ * 💡 最短「文字数」で到達するすべてのパスを探索 (ダイクストラ法)
  * @param {Object} wordMap - 単語マップ
  * @param {string|null} firstChar - 最初の文字
  * @param {string|null} lastChar - 最後の文字
@@ -196,7 +259,6 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
     let startingWords = firstChar ? (wordMap[firstChar] || []) : allWords;
     
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
-    let shortestPaths = [];
     
     // noPrecedingWord フィルタリング
     if (noPrecedingWord) {
@@ -205,76 +267,85 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
             return !allWords.some(prevWord => prevWord !== word && getShiritoriLastChar(prevWord) === firstCharOfWord);
         });
     }
-
-    // 1. 🚨 単語数1のパスを最初にチェックし、最短であれば即座に終了 🚨
-    for (const word of startingWords) {
-        const last = getShiritoriLastChar(word);
-        
-        if (lastChar === null || last === lastChar) {
-            
-            let isNoSucceeding = true;
-            if (noSucceedingWord) {
-                 // word以外に、lastで始まる単語が存在しないか確認
-                 isNoSucceeding = !allWords.some(nextWord => nextWord !== word && normalizeWord(nextWord) === last);
-            }
-            
-            if (isNoSucceeding && 
-                checkRequiredChars([word], requiredChars, requiredCharMode) && 
-                checkExcludeChars([word], excludeChars)) {
-                 
-                 shortestPaths.push([word]);
-            }
-        }
-    }
     
-    // 単語数1のパスが見つかった場合、それが最短なので、ソートして返す
-    if (shortestPaths.length > 0) {
-         return shortestPaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
-    }
-
-    // ----------------------------------------------------
-    // 2. 単語数2以上の最短パスを探索 (BFS)
-    // ----------------------------------------------------
+    // 💡 PriorityQueue: [合計文字数, 最後の単語, パスの配列]
+    const pq = new PriorityQueue(); 
     
-    const queue = [];
+    // Key: word, Value: minLength (その単語に到達したときの最小文字数)
     const minPathLength = {}; 
-    let shortestLength = Infinity;
-    
-    // 初期キュー投入 (単語数1のパスは既にチェック済み)
+    let shortestLength = Infinity; // 最短の文字数を追跡
+    let shortestPaths = [];
+
+    // 1. 初期キュー投入
     for (const word of startingWords) {
-        // パス長1のゴール条件を満たさないものだけ、次の探索の始点とする
-        if (!minPathLength[word]) {
-            minPathLength[word] = 1;
-            queue.push({ path: [word], used: new Set([word]) });
+        const length = word.length;
+        if (!minPathLength[word] || length < minPathLength[word]) {
+            minPathLength[word] = length;
+            // ダイクストラ法では、path全体を管理して、最短文字数パスを探索
+            pq.push([length, word, [word]]);
         }
     }
 
-    while (queue.length > 0) {
-        const { path, used } = queue.shift();
-        const currentLength = path.length;
+    // 2. ダイクストラ法実行
+    while (pq.size() > 0) {
+        const [currentLength, currentWord, path] = pq.pop();
+        
+        // 🚨 既にこの単語に、より短い文字数で到達しているか確認
+        if (currentLength > minPathLength[currentWord]) {
+            continue;
+        }
 
-        // 既に最短長以上であればスキップ
-        if (currentLength >= shortestLength) continue;
+        // 確定した最短文字数を超えているか確認 (最短文字数を見つけたらそれ以上の探索は行わない)
+        if (currentLength > shortestLength) {
+             continue;
+        }
 
-        const lastWord = path[currentLength - 1];
-        const lastCharOfCurrent = getShiritoriLastChar(lastWord);
-        if (!lastCharOfCurrent || lastCharOfCurrent === 'ン') continue;
+        const usedWords = new Set(path);
+        const lastCharOfCurrent = getShiritoriLastChar(currentWord);
+
+        // 終端文字がンまたは無効な文字で、かつそれがゴール条件を満たしていれば、ここでチェック
+        const isEndWordCondition = (!lastCharOfCurrent || lastCharOfCurrent === 'ン' || (lastChar !== null && lastCharOfCurrent === lastChar));
+
+        if (isEndWordCondition) {
+             // 終端文字がンでも、それがゴール条件を満たしていれば、ここでチェックが必要
+             if (lastChar === null || lastChar === lastCharOfCurrent) {
+                  // ゴール条件チェック (文字数とフィルタリング)
+                  let isNoSucceeding = true;
+                  if (noSucceedingWord) {
+                       // currentWord以外に、lastCharOfCurrentで始まる単語が存在しないか確認
+                       isNoSucceeding = !allWords.some(word => word !== currentWord && normalizeWord(word) === lastCharOfCurrent);
+                  }
+                    
+                  if (isNoSucceeding && 
+                      checkRequiredChars(path, requiredChars, requiredCharMode) && 
+                      checkExcludeChars(path, excludeChars)) {
+                     
+                     if (currentLength < shortestLength) {
+                         shortestLength = currentLength;
+                         shortestPaths = [path];
+                     } else if (currentLength === shortestLength) {
+                         shortestPaths.push(path);
+                     }
+                  }
+             }
+
+             // 終端文字がン、またはゴールに到達した場合、ここから次の探索は行わない
+             if (lastCharOfCurrent === 'ン' || currentLength === shortestLength) continue;
+        }
+
 
         const nextWords = wordMap[lastCharOfCurrent] || [];
 
         for (const nextWord of nextWords) {
-            if (!used.has(nextWord)) {
-                const nextLength = currentLength + 1;
+            if (!usedWords.has(nextWord)) {
+                const nextLength = currentLength + nextWord.length;
                 
-                // 次のパス長が既存の最短長と同じか超えていればスキップ
+                // 次のパス長が確定した最短長を超えていればスキップ
                 if (nextLength > shortestLength) continue;
 
-                // 経路の重複チェック（この単語に、より短い/同じ長さで既に到達しているか）
-                if (minPathLength[nextWord] && minPathLength[nextWord] <= nextLength) continue;
-                
                 const newPath = [...path, nextWord];
                 const nextLastChar = getShiritoriLastChar(nextWord);
-                
+
                 // 3. ゴール条件チェック
                 if (lastChar === null || nextLastChar === lastChar) {
                     
@@ -302,10 +373,10 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                 }
 
                 // 4. 次の探索のためにキューに追加
-                // 最短長が確定していなければ、または最短長と同じ長さのパスを構築中であれば続ける
-                if (nextLength < shortestLength) {
-                    minPathLength[nextWord] = nextLength; // ここでminPathLengthを更新
-                    queue.push({ path: newPath, used: new Set(newPath) });
+                // 既にこの単語に、より短い文字数で到達していなければ更新
+                if (!minPathLength[nextWord] || nextLength < minPathLength[nextWord]) {
+                    minPathLength[nextWord] = nextLength; 
+                    pq.push([nextLength, nextWord, newPath]); 
                 }
             }
         }
@@ -580,11 +651,11 @@ app.post('/api/shiritori', (req, res) => {
             return res.status(400).json({ error: '件数カウントは最短モードでは現在サポートされていません。' });
         }
         try {
-            // 🚨 修正された最短パス関数を呼び出し 🚨
+            // 🚨 文字数最短を検索するダイクストラ法ベースの関数を呼び出し 🚨
             results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
             return res.json({ results });
         } catch (e) {
-            console.error("Error in shortest path shiritori:", e);
+            console.error("Error in shortest path (Dijkstra) shiritori:", e);
             return res.status(500).json({ error: 'サーバー内部で最短パス検索中にエラーが発生しました。詳細はサーバーログを確認してください。' });
         }
     }
