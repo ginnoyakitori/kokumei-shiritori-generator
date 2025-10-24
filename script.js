@@ -103,8 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 結果表示ロジック (省略) ---
-    const displayResults = (data, mode) => {
+    // --- 結果表示ロジック ---
+    const displayResults = (data, mode, wordCountType) => {
         resultsDiv.innerHTML = '';
         
         if (data.error) {
@@ -113,12 +113,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (data.results && data.results.length > 0) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `${data.results.length} 通り見つかりました:`;
-            resultsDiv.appendChild(countMessage);
+            let pathsToDisplay = data.results;
+            
+            // 💡 最短モードかつ経路出力の場合のみ、文字数最小のパスをフィルタリング
+            if (mode === 'shiritori' && wordCountType === 'shortest' && document.querySelector('input[name="outputType"]:checked').value === 'path') {
+                
+                // 全パスの文字数を計算
+                const pathLengths = pathsToDisplay.map(path => 
+                    path.reduce((total, word) => total + word.length, 0)
+                );
+                
+                // 最小の文字数を取得
+                const minLength = Math.min(...pathLengths);
+
+                // 最小文字数のパスのみをフィルタリング
+                pathsToDisplay = pathsToDisplay.filter((_, index) => pathLengths[index] === minLength);
+                
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `${data.results.length} 通り（最短単語数）のしりとりのうち、最も文字数の少ない ${pathsToDisplay.length} 通り（${minLength}文字）が見つかりました:`;
+                resultsDiv.appendChild(countMessage);
+
+            } else {
+                // その他のモード/出力形式の場合は通常通り表示
+                const countMessage = document.createElement('p');
+                countMessage.textContent = `${data.results.length} 通り見つかりました:`;
+                resultsDiv.appendChild(countMessage);
+            }
             
             const ul = document.createElement('ul');
-            data.results.forEach((path, index) => {
+            pathsToDisplay.forEach((path, index) => {
                 const li = document.createElement('li');
                 li.textContent = `${index + 1}. ${path.join(' → ')}`;
                 ul.appendChild(li);
@@ -182,17 +205,20 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 if (mode === 'shiritori') {
                     const includeCharsText = includeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
                     const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
                     
                     const requiredCharMode = requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
+                    
+                    // 💡 wordCountTypeとwordCountを明確に取得
+                    const wordCountType = wordCountTypeSelect.value;
+                    const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
 
                     requestBody = { 
                         listName: listNameSelect.value, 
                         firstChar: firstCharInput.value.trim() || null, 
                         lastChar: lastCharInput.value.trim() || null, 
-                        wordCount: wordCountTypeSelect.value === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest', 
-                        requiredChars: requiredChars, // 💡 修正後の変数を使用
+                        wordCount: wordCount, // 💡 wordCountTypeではなく、実際の値 ('shortest'または数値)を送信
+                        requiredChars: requiredChars, 
                         excludeChars: excludeCharsInput.value.trim(),
                         noPrecedingWord: noPrecedingWordCheckbox.checked,
                         noSucceedingWord: noSucceedingWordCheckbox.checked,
@@ -217,7 +243,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (mode === 'wordCountShiritori') {
                     const includeCharsText = wordCountIncludeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
                     const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
                     
                     const requiredCharMode = wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
@@ -225,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     requestBody = { 
                         listName: wordCountShiritoriListNameSelect.value, 
                         wordCountPatterns: getWordCountPatterns(), 
-                        requiredChars: requiredChars, // 💡 修正後の変数を使用
+                        requiredChars: requiredChars, 
                         allowPermutation: allowWordCountPermutationCheckbox.checked,
                         requiredCharMode: requiredCharMode 
                     };
@@ -233,11 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                 } else if (mode === 'wildcardShiritori') {
                     const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
-                    // 💡 修正: カンマ区切りで入力された文字列（1文字以上）を配列に変換
-                    // 注: このモードのプレースホルダは「例: アフイ」で区切り文字がありません。
-                    // ユーザーがカンマ区切りで入力することを許容し、そうでなければ1文字ずつ区切るロジックに変更することも可能ですが、
-                    // 今回は他のモードに合わせてカンマ区切りを基本とします。（HTMLのplaceholderを修正推奨）
-                    // ここでは、一旦、**カンマ区切りで処理**します。
                     const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
 
                     const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
@@ -247,11 +267,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         firstWordPattern: firstWordPatternInput.value.trim(),
                         lastWordPattern: lastWordPatternInput.value.trim() || null,
                         wordCount: parseInt(wildcardShiritoriWordCountInput.value, 10),
-                        requiredChars: requiredChars, // 💡 修正後の変数を使用
+                        requiredChars: requiredChars, 
                         requiredCharMode: requiredCharMode 
                     };
                     apiPath = '/api/wildcard_shiritori';
                 }
+                
+                // 💡 shiritoriモードでのみ wordCountTypeを渡す
+                let currentWordCountType = mode === 'shiritori' ? wordCountTypeSelect.value : null;
 
                 if (apiPath && requestBody) {
                     response = await fetch(apiPath, {
@@ -261,9 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     
                     const data = await response.json(); 
-                    displayResults(data, mode);
+                    // 💡 displayResultsにwordCountTypeを渡す
+                    displayResults(data, mode, currentWordCountType); 
                 } else {
-                    displayResults({ error: '無効な検索モードです。' }, mode);
+                    displayResults({ error: '無効な検索モードです。' }, mode, null);
                 }
 
             } catch (error) {
