@@ -52,7 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const wildcardShiritoriIncludeCharsInput = document.getElementById('wildcardShiritoriIncludeChars');
     const wildcardRequiredCharExactlyCheckbox = document.getElementById('wildcardRequiredCharExactly');
     
-
+    const loopPatternInput = document.getElementById('loopPattern');
+    const loopListNameSelect = document.getElementById('loopListName');
+    modeSections.loop = document.getElementById('loopMode');
     // --- ビュー切り替えロジック ---
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
@@ -273,6 +275,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     apiPath = '/api/wildcard_shiritori';
                 }
                 
+                // --- 検索実行ロジック内に追加 ---
+                } else if (mode === 'loop') {
+                    apiPath = '/api/loop_shiritori';
+                    requestBody = {
+                        listName: loopListNameSelect.value,
+                        pattern: loopPatternInput.value.trim()
+                    };
+}
+
                 // 💡 shiritoriモードでのみ wordCountTypeを渡す
                 let currentWordCountType = mode === 'shiritori' ? wordCountTypeSelect.value : null;
 

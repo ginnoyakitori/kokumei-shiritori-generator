@@ -788,6 +788,81 @@ app.post('/api/wildcard_shiritori', (req, res) => {
 });
 
 
+/**
+ * 💡 ループしりとり探索ロジック
+ */
+function findLoopShiritori(wordMap, pattern) {
+    const L = pattern.length;
+    const regex = patternToRegex(pattern);
+    const results = [];
+    const allWords = Object.values(wordMap).flat();
+    const collator = new Intl.Collator('ja', { sensitivity: 'base' });
+
+    // 枝刈り効率化のため、長さがL未満の単語のみを使用
+    const candidateWords = allWords.filter(w => w.length < L);
+
+    function backtrack(path, currentStr) {
+        // 長さがピッタリになったら判定
+        if (currentStr.length === L) {
+            if (regex.test(currentStr)) {
+                const firstWord = path[0];
+                const lastWord = path[path.length - 1];
+                // 最後の単語の末尾が最初の単語の先頭に繋がるか
+                if (getShiritoriLastChar(lastWord) === normalizeWord(firstWord)) {
+                    results.push([...path]);
+                }
+            }
+            return;
+        }
+
+        // 長さを超えたら失敗
+        if (currentStr.length > L) return;
+
+        const lastChar = getShiritoriLastChar(path[path.length - 1]);
+        const nextWords = wordMap[lastChar] || [];
+
+        for (const nextWord of nextWords) {
+            // パズルを解く際、同じパス内で同じ単語を使わない制約を入れるのが一般的
+            if (!path.includes(nextWord)) {
+                backtrack([...path, nextWord], currentStr + nextWord);
+            }
+        }
+    }
+
+    // すべての単語を起点として試行
+    for (const startWord of candidateWords) {
+        backtrack([startWord], startWord);
+    }
+
+    // 重複排除（開始位置が違うだけの同じ環状パスをまとめる場合はここを調整）
+    const uniquePaths = [];
+    const seen = new Set();
+    results.forEach(p => {
+        const key = p.join(',');
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniquePaths.push(p);
+        }
+    });
+
+    return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
+}
+
+// --- APIエンドポイントの追加 ---
+app.post('/api/loop_shiritori', (req, res) => {
+    const { listName, pattern } = req.body;
+    const map = wordMap[listName];
+    if (!map || !pattern) return res.status(400).json({ error: '入力が不正です。' });
+
+    try {
+        const results = findLoopShiritori(map, pattern);
+        return res.json({ results });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: '探索中にエラーが発生しました。' });
+    }
+});
+
 // サーバー起動
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
