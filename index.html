@@ -209,20 +209,21 @@
         </div>
 
 <div id="loopMode" class="mode-section">
-    <h3>ループしりとり検索</h3>
-    <p>「？」を埋めてループするパスを見つけます。例：？？？？ゴ？？ト</p>
-    <div class="input-group">
-        <label>単語リスト:</label>
+    <h2>ループしりとり検索</h2> <p>「？」を埋めてループするパスを見つけます。例：？？？？ゴ？？ト</p>
+    
+    <div class="form-group"> <label for="loopListName">単語リスト:</label>
         <select id="loopListName">
             <option value="kokumei.txt">国名</option>
-            <option value="shutomei.txt">都市名</option>
-            <option value="kokumei_shutomei.txt">国名・都市名</option>
+            <option value="shutomei.txt">首都名</option>
+            <option value="kokumei_shutomei.txt">国名と首都名</option>
         </select>
     </div>
-    <div class="input-group">
-        <label>パターン:</label>
+
+    <div class="form-group">
+        <label for="loopPattern">パターン:</label>
         <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
     </div>
+
     <button class="search-btn">ループ検索実行</button>
 </div>
     </main>

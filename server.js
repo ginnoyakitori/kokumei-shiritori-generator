@@ -786,8 +786,6 @@ app.post('/api/wildcard_shiritori', (req, res) => {
     
     return res.json({ results });
 });
-
-
 /**
  * 💡 ループしりとり探索ロジック
  */
@@ -798,11 +796,10 @@ function findLoopShiritori(wordMap, pattern) {
     const allWords = Object.values(wordMap).flat();
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
 
-    // 枝刈り効率化のため、長さがL未満の単語のみを使用
-    const candidateWords = allWords.filter(w => w.length < L);
+    // 効率化のため、長さがL以下の単語のみを使用
+    const candidateWords = allWords.filter(w => w.length <= L);
 
     function backtrack(path, currentStr) {
-        // 長さがピッタリになったら判定
         if (currentStr.length === L) {
             if (regex.test(currentStr)) {
                 const firstWord = path[0];
@@ -815,26 +812,23 @@ function findLoopShiritori(wordMap, pattern) {
             return;
         }
 
-        // 長さを超えたら失敗
         if (currentStr.length > L) return;
 
         const lastChar = getShiritoriLastChar(path[path.length - 1]);
         const nextWords = wordMap[lastChar] || [];
 
         for (const nextWord of nextWords) {
-            // パズルを解く際、同じパス内で同じ単語を使わない制約を入れるのが一般的
             if (!path.includes(nextWord)) {
                 backtrack([...path, nextWord], currentStr + nextWord);
             }
         }
     }
 
-    // すべての単語を起点として試行
     for (const startWord of candidateWords) {
         backtrack([startWord], startWord);
     }
 
-    // 重複排除（開始位置が違うだけの同じ環状パスをまとめる場合はここを調整）
+    // 重複排除
     const uniquePaths = [];
     const seen = new Set();
     results.forEach(p => {
@@ -848,7 +842,7 @@ function findLoopShiritori(wordMap, pattern) {
     return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
-// --- APIエンドポイントの追加 ---
+// --- APIエンドポイント ---
 app.post('/api/loop_shiritori', (req, res) => {
     const { listName, pattern } = req.body;
     const map = wordMap[listName];
@@ -862,6 +856,7 @@ app.post('/api/loop_shiritori', (req, res) => {
         return res.status(500).json({ error: '探索中にエラーが発生しました。' });
     }
 });
+
 
 // サーバー起動
 app.listen(port, () => {
