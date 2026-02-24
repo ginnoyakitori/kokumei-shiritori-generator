@@ -789,6 +789,9 @@ app.post('/api/wildcard_shiritori', (req, res) => {
 /**
  * 💡 ループしりとり探索ロジック
  */
+/**
+ * 💡 ループしりとり探索ロジック（回転一致対応版）
+ */
 function findLoopShiritori(wordMap, pattern) {
     const L = pattern.length;
     const regex = patternToRegex(pattern);
@@ -796,22 +799,24 @@ function findLoopShiritori(wordMap, pattern) {
     const allWords = Object.values(wordMap).flat();
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
 
-    const candidateWords = allWords.filter(w => w.length <= L);
+    // 効率のため、パターン長以下の単語のみ対象
+    const candidateWords = allWords.filter(w => w.length < L);
 
     function backtrack(path, currentStr) {
+        // 現在の文字列長が目標に達したかチェック
         if (currentStr.length === L) {
-            // 💡 ここから修正：回転一致のロジック
             const firstWord = path[0];
             const lastWord = path[path.length - 1];
             
-            // 最後の単語が最初と繋がっているか確認
+            // 1. ループ構造（最後と最初が繋がるか）を確認
             if (getShiritoriLastChar(lastWord) === normalizeWord(firstWord)) {
+                // 2. 回転一致のチェック
                 // 文字列を1文字ずつずらして、どれかがパターンに合うかチェック
                 for (let i = 0; i < L; i++) {
                     const rotatedStr = currentStr.slice(i) + currentStr.slice(0, i);
                     if (regex.test(rotatedStr)) {
                         results.push([...path]);
-                        break; // 1つでも一致すればOK
+                        break; 
                     }
                 }
             }
@@ -829,16 +834,16 @@ function findLoopShiritori(wordMap, pattern) {
         }
     }
 
+    // すべての単語を開始地点として試行
     for (const startWord of candidateWords) {
         backtrack([startWord], startWord);
     }
 
-    // 💡 重複排除：[アンゴラ, ラトビア] と [ラトビア, アンゴラ] を同じ「輪」として扱う
+    // 重複排除（同じ単語の組み合わせによる輪を1つにまとめる）
     const uniquePaths = [];
     const seenLoops = new Set();
 
     results.forEach(path => {
-        // パスをソートして結合したものを「輪」のユニークIDとする
         const loopId = [...path].sort().join(',');
         if (!seenLoops.has(loopId)) {
             seenLoops.add(loopId);
@@ -848,6 +853,24 @@ function findLoopShiritori(wordMap, pattern) {
 
     return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
+
+// 🚨 【追加】フロントエンドからのリクエストを受けるエンドポイント
+app.post('/api/loop_shiritori', (req, res) => {
+    const { listName, pattern } = req.body;
+    const map = wordMap[listName];
+    
+    if (!map || !pattern) {
+        return res.status(400).json({ error: 'リスト名またはパターンが指定されていません。' });
+    }
+
+    try {
+        const results = findLoopShiritori(map, pattern);
+        res.json({ results });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: '探索中にエラーが発生しました。' });
+    }
+});
 // サーバー起動
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
