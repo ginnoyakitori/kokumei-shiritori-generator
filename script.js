@@ -5,25 +5,22 @@ document.addEventListener('DOMContentLoaded', () => {
         wildcard: document.getElementById('wildcardMode'),
         substring: document.getElementById('substringMode'),
         wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
-        wildcardShiritori: document.getElementById('wildcardShiritoriMode')
+        wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
+        loop: document.getElementById('loopMode')
     };
 
     const searchButtons = document.querySelectorAll('.search-btn');
     const resultsDiv = document.getElementById('results');
 
-    // --- 各モードの要素 ---
-    // リスト選択要素
+    // --- 各モードの要素取得 ---
     const listNameSelect = document.getElementById('listName');
     const wildcardListNameSelect = document.getElementById('wildcardListName');
     const substringListNameSelect = document.getElementById('substringListName');
     const wordCountShiritoriListNameSelect = document.getElementById('wordCountShiritoriListName');
     const wildcardShiritoriListNameSelect = document.getElementById('wildcardShiritoriListName');
 
-    // 文字指定しりとりモードの要素
+    // 文字指定しりとりモード
     const firstCharInput = document.getElementById('firstChar');
-    // --- 変更後：動的な要素取得と初期化 ---
-    const wordPatternList = document.getElementById('wordPatternList');
-    const addPatternBtn = document.getElementById('addPatternBtn');
     const lastCharInput = document.getElementById('lastChar');
     const wordCountTypeSelect = document.getElementById('wordCountType');
     const wordCountInputContainer = document.getElementById('wordCountInputContainer');
@@ -34,35 +31,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const noSucceedingWordCheckbox = document.getElementById('noSucceedingWord');
     const requiredCharExactlyCheckbox = document.getElementById('requiredCharExactly');
 
-    // ？文字検索モードの要素
+    // ？文字検索・部分一致
     const wildcardTextInput = document.getElementById('wildcardText');
-
-    // 部分文字列検索モードの要素
     const substringTextInput = document.getElementById('substringText');
 
-    // 単語数指定しりとりモードの要素
+    // 単語数指定しりとり
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
     const wordCountIncludeCharsInput = document.getElementById('wordCountIncludeChars');
     const allowWordCountPermutationCheckbox = document.getElementById('allowWordCountPermutation');
     const wordCountRequiredCharExactlyCheckbox = document.getElementById('wordCountRequiredCharExactly');
 
-
-    // ？文字指定しりとりモードの要素
-    const firstWordPatternInput = document.getElementById('firstWordPattern');
+    // --- ？文字指定しりとり（修正のメイン箇所） ---
+    const wordPatternList = document.getElementById('wordPatternList');
+    const addPatternBtn = document.getElementById('addPatternBtn');
     const lastWordPatternInput = document.getElementById('lastWordPattern');
-    const wildcardShiritoriWordCountInput = document.getElementById('wildcardShiritoriWordCount');
     const wildcardShiritoriIncludeCharsInput = document.getElementById('wildcardShiritoriIncludeChars');
-    const wildcardRequiredCharExactlyCheckbox = document.getElementById('wildcardRequiredCharExactly');
-    
+    // HTMLにない可能性がある要素は、後で安全に取得します
+
+    // ループ検索
     const loopPatternInput = document.getElementById('loopPattern');
     const loopListNameSelect = document.getElementById('loopListName');
-    modeSections.loop = document.getElementById('loopMode');
-    // --- ビュー切り替えロジック ---
+
+    // --- ビュー切り替え ---
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
         for (const mode in modeSections) {
-            if (modeSections[mode]) { 
+            if (modeSections[mode]) {
                 modeSections[mode].classList.remove('active');
             }
         }
@@ -70,11 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
             modeSections[selectedMode].classList.add('active');
         }
     };
-
     modeSelect.addEventListener('change', updateModeView);
-    updateModeView(); // 初回表示
+    updateModeView();
 
-    // --- 単語数入力フィールド管理 ---
+    // --- 動的フィールド管理（単語数指定） ---
     const getWordCountPatterns = () => {
         return Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input'))
             .map(input => input.value.trim())
@@ -82,26 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(val => val.split(',').map(numStr => parseInt(numStr.trim(), 10)).filter(n => !isNaN(n) && n > 0));
     };
 
-
-    // 中間単語の追加・削除ロジック
-    if (addPatternBtn) {
-        addPatternBtn.addEventListener('click', () => {
-            const newDiv = document.createElement('div');
-            newDiv.className = 'pattern-item';
-            newDiv.innerHTML = `
-                <input type="text" class="word-pattern-input" placeholder="例: ？？ン">
-                <button class="remove-pattern-btn">-</button>
-            `;
-            wordPatternList.appendChild(newDiv);
-        });
-
-        wordPatternList.addEventListener('click', (event) => {
-            if (event.target.classList.contains('remove-pattern-btn')) {
-                event.target.closest('.pattern-item').remove();
-            }
-        });
-    }
-    
     addWordCountInputButton.addEventListener('click', () => {
         const newGroup = document.createElement('div');
         newGroup.className = 'word-count-input-group';
@@ -120,18 +94,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- 動的フィールド管理（？文字指定・中間単語） ---
+    if (addPatternBtn) {
+        addPatternBtn.addEventListener('click', () => {
+            const currentItems = wordPatternList.querySelectorAll('.pattern-item');
+            const newDiv = document.createElement('div');
+            newDiv.className = 'pattern-item';
+            newDiv.style.marginTop = "8px";
+            newDiv.innerHTML = `
+                <span class="label">${currentItems.length + 1}番目:</span>
+                <input type="text" class="word-pattern-input" placeholder="例: ？？ン">
+                <button class="remove-pattern-btn" style="margin-left:5px;">-</button>
+            `;
+            wordPatternList.appendChild(newDiv);
+        });
+
+        wordPatternList.addEventListener('click', (event) => {
+            if (event.target.classList.contains('remove-pattern-btn')) {
+                event.target.closest('.pattern-item').remove();
+                // ラベルの更新
+                wordPatternList.querySelectorAll('.pattern-item').forEach((item, index) => {
+                    const label = item.querySelector('.label');
+                    label.textContent = `${index + 1}番目${index === 0 ? ' (開始)' : ''}:`;
+                });
+            }
+        });
+    }
+
     wordCountTypeSelect.addEventListener('change', (event) => {
-        if (event.target.value === 'shortest') {
-            wordCountInputContainer.style.display = 'none';
-        } else {
-            wordCountInputContainer.style.display = 'block';
-        }
+        wordCountInputContainer.style.display = (event.target.value === 'shortest') ? 'none' : 'block';
     });
 
-    // --- 結果表示ロジック ---
+    // --- 結果表示 ---
     const displayResults = (data, mode, wordCountType) => {
         resultsDiv.innerHTML = '';
-        
         if (data.error) {
             resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
             return;
@@ -139,32 +135,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.results && data.results.length > 0) {
             let pathsToDisplay = data.results;
-            
-            // 💡 最短モードかつ経路出力の場合のみ、文字数最小のパスをフィルタリング
             if (mode === 'shiritori' && wordCountType === 'shortest' && document.querySelector('input[name="outputType"]:checked').value === 'path') {
-                
-                // 全パスの文字数を計算
-                const pathLengths = pathsToDisplay.map(path => 
-                    path.reduce((total, word) => total + word.length, 0)
-                );
-                
-                // 最小の文字数を取得
+                const pathLengths = pathsToDisplay.map(path => path.reduce((total, word) => total + word.length, 0));
                 const minLength = Math.min(...pathLengths);
-
-                // 最小文字数のパスのみをフィルタリング
                 pathsToDisplay = pathsToDisplay.filter((_, index) => pathLengths[index] === minLength);
-                
-                const countMessage = document.createElement('p');
-                countMessage.textContent = `${data.results.length} 通り（最短単語数）のしりとりのうち、最も文字数の少ない ${pathsToDisplay.length} 通り（${minLength}文字）が見つかりました:`;
-                resultsDiv.appendChild(countMessage);
-
+                resultsDiv.innerHTML = `<p>${data.results.length} 通り中、最短 ${pathsToDisplay.length} 通り（${minLength}文字）を表示:</p>`;
             } else {
-                // その他のモード/出力形式の場合は通常通り表示
-                const countMessage = document.createElement('p');
-                countMessage.textContent = `${data.results.length} 通り見つかりました:`;
-                resultsDiv.appendChild(countMessage);
+                resultsDiv.innerHTML = `<p>${data.results.length} 通り見つかりました:</p>`;
             }
-            
             const ul = document.createElement('ul');
             pathsToDisplay.forEach((path, index) => {
                 const li = document.createElement('li');
@@ -172,171 +150,107 @@ document.addEventListener('DOMContentLoaded', () => {
                 ul.appendChild(li);
             });
             resultsDiv.appendChild(ul);
-        } else if (data.results && data.results.length === 0) {
-            resultsDiv.innerHTML = '<p class="no-results-message">条件に合うしりとりパスは見つかりませんでした。</p>';
-        } else if (data.wildcardMatches) {
-             const countMessage = document.createElement('p');
-             countMessage.textContent = `${data.wildcardMatches.length} 件見つかりました:`;
-             resultsDiv.appendChild(countMessage);
-             
-             const ul = document.createElement('ul');
-             data.wildcardMatches.forEach((word) => {
-                 const li = document.createElement('li');
-                 li.textContent = word;
-                 ul.appendChild(li);
-             });
-             resultsDiv.appendChild(ul);
-        } else if (data.substringMatches) {
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `${data.substringMatches.length} 件見つかりました:`;
-            resultsDiv.appendChild(countMessage);
-            
+        } else if (data.wildcardMatches || data.substringMatches) {
+            const matches = data.wildcardMatches || data.substringMatches;
+            resultsDiv.innerHTML = `<p>${matches.length} 件見つかりました:</p>`;
             const ul = document.createElement('ul');
-            data.substringMatches.forEach((word) => {
+            matches.forEach(word => {
                 const li = document.createElement('li');
                 li.textContent = word;
                 ul.appendChild(li);
             });
             resultsDiv.appendChild(ul);
-        } else if (data.firstCharCounts || data.lastCharCounts) {
-            const counts = data.firstCharCounts || data.lastCharCounts;
-            const totalCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
-            const countMessage = document.createElement('p');
-            countMessage.textContent = `総数: ${totalCount} 通り見つかりました。`;
-            resultsDiv.appendChild(countMessage);
-            
-            const ul = document.createElement('ul');
-            for (const char in counts) {
-                const li = document.createElement('li');
-                li.textContent = `${char}: ${counts[char]} 通り`;
-                ul.appendChild(li);
-            }
-            resultsDiv.appendChild(ul);
         } else {
-             resultsDiv.innerHTML = '<p class="no-results-message">条件に合う単語は見つかりませんでした。</p>';
+            resultsDiv.innerHTML = '<p class="no-results-message">条件に合う結果は見つかりませんでした。</p>';
         }
     };
 
-
-    // --- 検索実行ロジック ---
+    // --- 検索実行 ---
     searchButtons.forEach(button => {
-        button.addEventListener('click', async (event) => {
+        button.addEventListener('click', async () => {
             resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
             const mode = modeSelect.value;
-            let response;
-            let apiPath;
-            let requestBody;
-            
+            let apiPath, requestBody;
+
             try {
                 if (mode === 'shiritori') {
-                    const includeCharsText = includeCharsInput.value.trim();
-                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
-                    const requiredCharMode = requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
-                    
-                    const wordCountType = wordCountTypeSelect.value;
-                    const wordCount = wordCountType === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest';
-
-                    requestBody = { 
-                        listName: listNameSelect.value, 
-                        firstChar: firstCharInput.value.trim() || null, 
-                        lastChar: lastCharInput.value.trim() || null, 
-                        wordCount: wordCount,
-                        requiredChars: requiredChars, 
+                    const reqChars = includeCharsInput.value.trim() ? includeCharsInput.value.split(',').map(c => c.trim()) : null;
+                    requestBody = {
+                        listName: listNameSelect.value,
+                        firstChar: firstCharInput.value.trim() || null,
+                        lastChar: lastCharInput.value.trim() || null,
+                        wordCount: wordCountTypeSelect.value === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest',
+                        requiredChars: reqChars,
                         excludeChars: excludeCharsInput.value.trim(),
                         noPrecedingWord: noPrecedingWordCheckbox.checked,
                         noSucceedingWord: noSucceedingWordCheckbox.checked,
                         outputType: document.querySelector('input[name="outputType"]:checked').value,
-                        requiredCharMode: requiredCharMode 
+                        requiredCharMode: requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast'
                     };
                     apiPath = '/api/shiritori';
 
                 } else if (mode === 'wildcard') {
                     apiPath = '/api/wildcard_search';
-                    requestBody = { 
-                        listName: wildcardListNameSelect.value, 
-                        searchText: wildcardTextInput.value.trim() 
-                    };
+                    requestBody = { listName: wildcardListNameSelect.value, searchText: wildcardTextInput.value.trim() };
 
                 } else if (mode === 'substring') {
                     apiPath = '/api/substring_search';
-                    requestBody = { 
-                        listName: substringListNameSelect.value, 
-                        searchText: substringTextInput.value.trim() 
-                    };
+                    requestBody = { listName: substringListNameSelect.value, searchText: substringTextInput.value.trim() };
 
                 } else if (mode === 'wordCountShiritori') {
-                    const includeCharsText = wordCountIncludeCharsInput.value.trim();
-                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
-                    const requiredCharMode = wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
-
-                    requestBody = { 
-                        listName: wordCountShiritoriListNameSelect.value, 
-                        wordCountPatterns: getWordCountPatterns(), 
-                        requiredChars: requiredChars, 
+                    const reqChars = wordCountIncludeCharsInput.value.trim() ? wordCountIncludeCharsInput.value.split(',').map(c => c.trim()) : null;
+                    requestBody = {
+                        listName: wordCountShiritoriListNameSelect.value,
+                        wordCountPatterns: getWordCountPatterns(),
+                        requiredChars: reqChars,
                         allowPermutation: allowWordCountPermutationCheckbox.checked,
-                        requiredCharMode: requiredCharMode 
+                        requiredCharMode: wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast'
                     };
                     apiPath = '/api/word_count_shiritori';
+
+                } else if (mode === 'wildcardShiritori') {
+                    // 安全な要素取得
+                    const exactlyCheck = document.getElementById('wildcardRequiredCharExactly');
+                    const wordCountField = document.getElementById('wildcardShiritoriWordCount');
                     
-                // --- 変更後：検索実行ロジック ---
-    } else if (mode === 'wildcardShiritori') {
-        const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
-        const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
-        const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
+                    // パターンを集約（開始・中間の全て）
+                    const patterns = Array.from(document.querySelectorAll('#wordPatternList .word-pattern-input'))
+                                          .map(input => input.value.trim())
+                                          .filter(val => val !== '');
+                    
+                    // 最後の単語があれば追加
+                    const lastPat = lastWordPatternInput.value.trim();
+                    if (lastPat) patterns.push(lastPat);
 
-        // 全ての単語入力欄（最初、追加分、最後）を順番に配列に格納
-        const patterns = [];
-        // HTML側で「最初」のinputにも .word-pattern-input クラスをつけておくと一括取得できて便利です
-        // ここでは個別に取得する例で記述します
-        patterns.push(document.getElementById('firstWordPattern').value.trim());
-        
-        // 追加された中間単語を取得
-        document.querySelectorAll('#wordPatternList .word-pattern-input').forEach(input => {
-            if (input.value.trim()) patterns.push(input.value.trim());
-        });
+                    const reqChars = wildcardShiritoriIncludeCharsInput.value.trim() ? wildcardShiritoriIncludeCharsInput.value.split(',').map(c => c.trim()) : null;
 
-        // 最後の単語（入力がある場合のみ）
-        const lastPat = document.getElementById('lastWordPattern').value.trim();
-        if (lastPat) patterns.push(lastPat);
-
-        requestBody = { 
-            listName: wildcardShiritoriListNameSelect.value, 
-            patterns: patterns, // 単一の pattern ではなく配列として送信
-            wordCount: parseInt(wildcardShiritoriWordCountInput.value, 10),
-            requiredChars: requiredChars, 
-            requiredCharMode: requiredCharMode 
-        };
-        apiPath = '/api/wildcard_shiritori';
-    
+                    requestBody = {
+                        listName: wildcardShiritoriListNameSelect.value,
+                        patterns: patterns,
+                        // HTMLに単語数入力がない場合は、パターンの配列長を単語数とする
+                        wordCount: wordCountField ? parseInt(wordCountField.value, 10) : patterns.length,
+                        requiredChars: reqChars,
+                        requiredCharMode: (exactlyCheck && exactlyCheck.checked) ? 'exactly' : 'atLeast'
+                    };
+                    apiPath = '/api/wildcard_shiritori';
 
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
-                    requestBody = {
-                        listName: loopListNameSelect.value,
-                        pattern: loopPatternInput.value.trim()
-                    };
+                    requestBody = { listName: loopListNameSelect.value, pattern: loopPatternInput.value.trim() };
                 }
 
-                // 💡 shiritoriモードでのみ wordCountTypeを渡す
-                let currentWordCountType = mode === 'shiritori' ? wordCountTypeSelect.value : null;
-
                 if (apiPath && requestBody) {
-                    response = await fetch(apiPath, {
+                    const response = await fetch(apiPath, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestBody)
                     });
-                    
-                    const data = await response.json(); 
-                    // 💡 displayResultsにwordCountTypeを渡す
-                    displayResults(data, mode, currentWordCountType); 
-                } else {
-                    displayResults({ error: '無効な検索モードです。' }, mode, null);
+                    const data = await response.json();
+                    displayResults(data, mode, mode === 'shiritori' ? wordCountTypeSelect.value : null);
                 }
-
             } catch (error) {
                 console.error("Fetch error:", error);
-                resultsDiv.innerHTML = '<p class="error-message">サーバーとの通信中に予期せぬエラーが発生しました。</p>';
+                resultsDiv.innerHTML = '<p class="error-message">通信エラーが発生しました。</p>';
             }
         });
     });
