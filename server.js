@@ -22,12 +22,17 @@ function getLastChar(word) {
 }
 
 const express = require('express');
-const fs = require('fs');
 const app = express();
+
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.static('.')); 
+app.get('/', (req,res)=>{
+    res.send("Server OK");
+});
+
+app.listen(port, ()=>{
+    console.log("Server running on port", port);
+});
 
 // === データとキャッシュ ===
 let wordLists = {};
