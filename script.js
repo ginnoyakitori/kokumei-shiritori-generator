@@ -117,18 +117,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
                         requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
                     };
+} else if (mode === 'wildcardShiritori') {
+apiPath = '/api/wildcard_shiritori';
 
-                } else if (mode === 'wildcardShiritori') {
-                    apiPath = '/api/wildcard_shiritori';
-                    // 中間も含めた全てのパターン取得
-                    const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
-                                          .map(input => input.value.trim())
-                                          .filter(val => val !== "");
-                    requestBody = {
-                        listName: commonListName,
-                        patterns: patterns,
-                        wordCount: patterns.length
-                    };
+const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
+    .map(input => input.value.trim())
+    .filter(val => val !== "");
+
+const includeStr = getVal('includeChars');
+
+requestBody = {
+    listName: commonListName,
+    wordPatterns: patterns,
+    requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
+    requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
+};
+
+
+
+
 
                 } else if (mode === 'wordCountShiritori') {
                     apiPath = '/api/word_count_shiritori';
