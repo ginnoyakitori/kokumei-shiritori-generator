@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 文字指定しりとりモードの要素
     const firstCharInput = document.getElementById('firstChar');
+    // --- 変更後：動的な要素取得と初期化 ---
+    const wordPatternList = document.getElementById('wordPatternList');
+    const addPatternBtn = document.getElementById('addPatternBtn');
     const lastCharInput = document.getElementById('lastChar');
     const wordCountTypeSelect = document.getElementById('wordCountType');
     const wordCountInputContainer = document.getElementById('wordCountInputContainer');
@@ -78,6 +81,26 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(val => val !== '')
             .map(val => val.split(',').map(numStr => parseInt(numStr.trim(), 10)).filter(n => !isNaN(n) && n > 0));
     };
+
+
+    // 中間単語の追加・削除ロジック
+    if (addPatternBtn) {
+        addPatternBtn.addEventListener('click', () => {
+            const newDiv = document.createElement('div');
+            newDiv.className = 'pattern-item';
+            newDiv.innerHTML = `
+                <input type="text" class="word-pattern-input" placeholder="例: ？？ン">
+                <button class="remove-pattern-btn">-</button>
+            `;
+            wordPatternList.appendChild(newDiv);
+        });
+
+        wordPatternList.addEventListener('click', (event) => {
+            if (event.target.classList.contains('remove-pattern-btn')) {
+                event.target.closest('.pattern-item').remove();
+            }
+        });
+    }
     
     addWordCountInputButton.addEventListener('click', () => {
         const newGroup = document.createElement('div');
@@ -255,20 +278,36 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                     apiPath = '/api/word_count_shiritori';
                     
-                } else if (mode === 'wildcardShiritori') {
-                    const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
-                    const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
-                    const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
+                // --- 変更後：検索実行ロジック ---
+    } else if (mode === 'wildcardShiritori') {
+        const includeCharsText = wildcardShiritoriIncludeCharsInput.value.trim();
+        const requiredChars = includeCharsText ? includeCharsText.split(',').map(c => c.trim()).filter(c => c.length > 0) : null;
+        const requiredCharMode = wildcardRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast';
 
-                    requestBody = { 
-                        listName: wildcardShiritoriListNameSelect.value, 
-                        firstWordPattern: firstWordPatternInput.value.trim(),
-                        lastWordPattern: lastWordPatternInput.value.trim() || null,
-                        wordCount: parseInt(wildcardShiritoriWordCountInput.value, 10),
-                        requiredChars: requiredChars, 
-                        requiredCharMode: requiredCharMode 
-                    };
-                    apiPath = '/api/wildcard_shiritori';
+        // 全ての単語入力欄（最初、追加分、最後）を順番に配列に格納
+        const patterns = [];
+        // HTML側で「最初」のinputにも .word-pattern-input クラスをつけておくと一括取得できて便利です
+        // ここでは個別に取得する例で記述します
+        patterns.push(document.getElementById('firstWordPattern').value.trim());
+        
+        // 追加された中間単語を取得
+        document.querySelectorAll('#wordPatternList .word-pattern-input').forEach(input => {
+            if (input.value.trim()) patterns.push(input.value.trim());
+        });
+
+        // 最後の単語（入力がある場合のみ）
+        const lastPat = document.getElementById('lastWordPattern').value.trim();
+        if (lastPat) patterns.push(lastPat);
+
+        requestBody = { 
+            listName: wildcardShiritoriListNameSelect.value, 
+            patterns: patterns, // 単一の pattern ではなく配列として送信
+            wordCount: parseInt(wildcardShiritoriWordCountInput.value, 10),
+            requiredChars: requiredChars, 
+            requiredCharMode: requiredCharMode 
+        };
+        apiPath = '/api/wildcard_shiritori';
+    
 
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
