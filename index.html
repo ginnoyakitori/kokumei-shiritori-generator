@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>国名しりとり検索</title>
+    <title>国名しりとり検索 Pro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,217 +13,136 @@
         <h1>国名しりとり検索</h1>
     </header>
 
-    <div class="mode-selector">
-        <label for="modeSelect">検索モードを選択:</label>
-        <select id="modeSelect">
-            <option value="shiritori">文字指定しりとり</option>
-            <option value="wildcard">？文字検索</option>
-            <option value="substring">部分文字列検索</option>
-            <option value="wordCountShiritori">単語数指定しりとり</option>
-            <option value="wildcardShiritori">？文字指定しりとり検索</option>
-             <option value="loop">ループしりとり検索</option>
-        </select>
-    </div>
+    <section class="common-settings">
+        <div class="form-group">
+            <label for="listName">使用する単語リスト:</label>
+            <select id="listName">
+                <option value="kokumei.txt">国名</option>
+                <option value="shutomei.txt">首都名</option>
+                <option value="kokumei_shutomei.txt">国名と首都名</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="modeSelect">検索モード:</label>
+            <select id="modeSelect">
+                <option value="shiritori">文字指定しりとり</option>
+                <option value="wildcardShiritori">？文字指定しりとり（経路）</option>
+                <option value="wordCountShiritori">単語数指定しりとり</option>
+                <option value="loop">ループ検索</option>
+                <hr>
+                <option value="wildcard">単語検索（？使用）</option>
+                <option value="substring">単語検索（部分一致）</option>
+            </select>
+        </div>
+    </section>
+
+    <hr>
 
     <main>
         <div id="shiritoriMode" class="mode-section active">
             <h2>文字指定しりとり検索</h2>
-            <div class="form-group">
-                <label for="listName">単語リスト:</label>
-                <select id="listName">
-                    <option value="kokumei.txt">国名</option>
-                    <option value="shutomei.txt">首都名</option>
-                    <option value="kokumei_shutomei.txt">国名と首都名</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="firstChar">最初の文字 (任意):</label>
-                <input type="text" id="firstChar" placeholder="例: ベ">
-            </div>
-            <div class="form-group">
-                <label for="lastChar">最後の文字 (任意):</label>
-                <input type="text" id="lastChar" placeholder="例: ン">
-            </div>
-            <div class="form-group">
-                <label for="includeChars">必ず含める文字 (任意):</label>
-                <input type="text" id="includeChars" placeholder="例: ス,パ">
-            </div>
-            
-            <div class="form-group constraint-group">
-                <input type="checkbox" id="requiredCharExactly">
-                <label for="requiredCharExactly">必須文字をちょうど指定回数使う</label>
-            
-            </div>
-            
-            <div class="form-group">
-                <label for="excludeChars">必ず含まない文字 (任意):</label>
-                <input type="text" id="excludeChars" placeholder="例: ン,ワ">
-            </div>
-            
-            <div class="form-group constraint-group">
-                <label>しりとり接続の制約:</label>
-                <div>
-                    <input type="checkbox" id="noPrecedingWord">
-                    <label for="noPrecedingWord">最初の単語の前に続かない</label>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>開始文字</label>
+                    <input type="text" id="firstChar" placeholder="例: ア">
                 </div>
-                <div>
-                    <input type="checkbox" id="noSucceedingWord">
-                    <label for="noSucceedingWord">最後の単語の後に続かない</label>
+                <div class="form-group">
+                    <label>終了文字</label>
+                    <input type="text" id="lastChar" placeholder="例: ン">
                 </div>
             </div>
-            
             <div class="form-group">
-                <label for="wordCountType">単語数:</label>
+                <label>必須・除外文字</label>
+                <input type="text" id="includeChars" placeholder="含める文字（例: ス,パ）">
+                <input type="text" id="excludeChars" placeholder="除外する文字（例: ワ）" style="margin-top:5px;">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="requiredCharExactly">
+                    <label for="requiredCharExactly">必須文字をちょうど指定回数使う</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>単語数設定</label>
                 <select id="wordCountType">
-                    <option value="shortest">最短</option>
-                    <option value="fixed" selected>指定</option>
+                    <option value="shortest">最短経路を検索</option>
+                    <option value="fixed" selected>単語数を指定する</option>
                 </select>
-            </div>
-            <div id="wordCountInputContainer" class="form-group">
-                <label for="wordCount">単語数 (指定):</label>
-                <input type="number" id="wordCount" value="3" min="1">
-            </div>
-            <div class="form-group output-options">
-                <label>出力形式:</label>
-                <div class="button-group">
-                    <input type="radio" id="outputPath" name="outputType" value="path" checked>
-                    <label for="outputPath" class="btn">経路</label>
-                    <input type="radio" id="outputFirstCharCount" name="outputType" value="firstCharCount">
-                    <label for="outputFirstCharCount" class="btn">開始文字別の件数</label>
-                    <input type="radio" id="outputLastCharCount" name="outputType" value="lastCharCount">
-                    <label for="outputLastCharCount" class="btn">終了文字別の件数</label>
+                <div id="wordCountInputContainer" style="margin-top:5px;">
+                    <input type="number" id="wordCount" value="3" min="1">
                 </div>
             </div>
-            <button class="search-btn">検索</button>
+            <div class="form-group">
+                <label>出力オプション</label>
+                <div class="radio-group">
+                    <input type="radio" id="outputPath" name="outputType" value="path" checked>
+                    <label for="outputPath">経路表示</label>
+                    <input type="radio" id="outputFirstCount" name="outputType" value="firstCharCount">
+                    <label for="outputFirstCount">開始文字別集計</label>
+                </div>
+            </div>
+            <button class="search-btn primary">しりとり経路を検索</button>
         </div>
 
-        <div id="wildcardMode" class="mode-section">
-            <h2>？文字検索</h2>
-            <div class="form-group">
-                <label for="wildcardListName">単語リスト:</label>
-                <select id="wildcardListName">
-                    <option value="kokumei.txt">国名</option>
-                    <option value="shutomei.txt">首都名</option>
-                    <option value="kokumei_shutomei.txt">国名と首都名</option>
-                </select>
+        <div id="wildcardShiritoriMode" class="mode-section">
+            <h2>？文字指定しりとり検索</h2>
+            <p class="description">特定のパターン（例：日本→？？？→ロ？ア）に合う経路を探します。</p>
+            <div id="wordPatternList">
+                <div class="pattern-item">
+                    <span class="label">1番目:</span>
+                    <input type="text" class="word-pattern-input" value="日本">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="wildcardText">検索文字 (？はワイルドカード):</label>
-                <input type="text" id="wildcardText" placeholder="例: ス？？ル">
+            <button id="addPatternBtn" class="add-btn">+ 中間単語を追加</button>
+            <div class="form-group" style="margin-top:15px;">
+                <label>最後の単語パターン:</label>
+                <input type="text" id="lastWordPattern" class="word-pattern-input" placeholder="例: ロ？ア">
             </div>
-            <button class="search-btn">検索</button>
-        </div>
-
-        <div id="substringMode" class="mode-section">
-            <h2>部分文字列検索</h2>
-            <div class="form-group">
-                <label for="substringListName">単語リスト:</label>
-                <select id="substringListName">
-                    <option value="kokumei.txt">国名</option>
-                    <option value="shutomei.txt">首都名</option>
-                    <option value="kokumei_shutomei.txt">国名と首都名</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="substringText">検索文字:</label>
-                <input type="text" id="substringText" placeholder="例: リカ">
-            </div>
-            <button class="search-btn">検索</button>
+            <button class="search-btn primary">指定パターンで検索</button>
         </div>
 
         <div id="wordCountShiritoriMode" class="mode-section">
             <h2>単語数指定しりとり</h2>
-            <div class="form-group">
-                <label for="wordCountShiritoriListName">単語リスト:</label>
-                <select id="wordCountShiritoriListName">
-                    <option value="kokumei.txt">国名</option>
-                    <option value="shutomei.txt">首都名</option>
-                    <option value="kokumei_shutomei.txt">国名と首都名</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>各単語の文字数 (カンマ区切りで複数指定可):</label>
-                <div id="wordCountInputs" class="word-count-inputs">
-                    <div class="word-count-input-group">
-                        <input type="text" class="word-count-input" value="2,3" placeholder="例: 2,3">
-                        <button class="remove-word-count-input">-</button>
-                    </div>
+            <div id="wordCountInputs">
+                <div class="word-count-input-group">
+                    <input type="text" class="word-count-input" value="2,3" placeholder="例: 3">
+                    <button class="remove-word-count-input">-</button>
                 </div>
-                <button id="addWordCountInput" class="add-btn">単語を追加</button>
             </div>
-            
-            <div class="form-group constraint-group">
+            <button id="addWordCountInput" class="add-btn">+ 単語を追加</button>
+            <div class="checkbox-group" style="margin-top:10px;">
                 <input type="checkbox" id="allowWordCountPermutation">
-                <label for="allowWordCountPermutation">単語数の並び替えを許可する</label>
+                <label for="allowWordCountPermutation">並び替えを許可（例: 2,3 でも 3,2 でもOK）</label>
             </div>
-            
-            <div class="form-group">
-                <label for="wordCountIncludeChars">必ず含める文字 (任意):</label>
-                <input type="text" id="wordCountIncludeChars" placeholder="例: ス,パ">
-            </div>
-            
-            <div class="form-group constraint-group">
-                <input type="checkbox" id="wordCountRequiredCharExactly">
-                <label for="wordCountRequiredCharExactly">必須文字をちょうど指定回数使う</label>
-                
-            </div>
-
-            <button class="search-btn">検索</button>
+            <button class="search-btn primary">検索実行</button>
         </div>
 
-<div id="wildcardShiritoriMode" class="mode-section">
-    <h2>？文字指定しりとり検索</h2>
-    <div class="form-group">
-        <label>単語の構成とパターン (？可):</label>
-        <div id="wordPatternList" class="word-pattern-list">
-            <div class="pattern-item">
-                <span class="label">1番目 (開始):</span>
-                <input type="text" class="word-pattern-input" placeholder="例: 日本" value="日本">
-            </div>
-            </div>
-        <button id="addPatternBtn" class="add-btn" style="margin-top: 10px;">中間単語を追加</button>
-        <div class="pattern-item" style="margin-top: 10px;">
-            <span class="label">最後:</span>
-            <input type="text" id="lastWordPattern" class="word-pattern-input" placeholder="例: ロ？ア">
+        <div id="loopMode" class="mode-section">
+            <h2>ループ検索</h2>
+            <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
+            <button class="search-btn primary">ループを見つける</button>
         </div>
-    </div>
 
-    <div class="form-group">
-        <label for="wildcardShiritoriIncludeChars">必ず含める文字 (任意):</label>
-        <input type="text" id="wildcardShiritoriIncludeChars" placeholder="例: ア,イ">
-    </div>
-    
-    <button class="search-btn">しりとりパスをすべて検索</button>
-</div>
-<div id="loopMode" class="mode-section">
-    <h2>ループしりとり検索</h2> <p>「？」を埋めてループするパスを見つけます。例：？？？？ゴ？？ト</p>
-    
-    <div class="form-group"> <label for="loopListName">単語リスト:</label>
-        <select id="loopListName">
-            <option value="kokumei.txt">国名</option>
-            <option value="shutomei.txt">首都名</option>
-            <option value="kokumei_shutomei.txt">国名と首都名</option>
-        </select>
-    </div>
+        <div id="wildcardMode" class="mode-section">
+            <h2>？文字単語検索</h2>
+            <input type="text" id="wildcardText" placeholder="例: ス？？ル">
+            <button class="search-btn primary">単語を検索</button>
+        </div>
 
-    <div class="form-group">
-        <label for="loopPattern">パターン:</label>
-        <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
-    </div>
-
-    <button class="search-btn">ループ検索実行</button>
-</div>
+        <div id="substringMode" class="mode-section">
+            <h2>部分一致検索</h2>
+            <input type="text" id="substringText" placeholder="例: リカ">
+            <button class="search-btn primary">単語を検索</button>
+        </div>
     </main>
 
-    <div class="results-container">
+    <section class="results-container">
         <h3>検索結果</h3>
         <div id="results">
-            <p>ここに結果が表示されます。</p>
+            <p class="placeholder">ここに結果が表示されます。</p>
         </div>
-    </div>
+    </section>
 </div>
 
 <script src="script.js"></script>
-
 </body>
 </html>
