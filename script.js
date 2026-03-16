@@ -1,101 +1,40 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- 共通要素の取得 ---
     const modeSelect = document.getElementById('modeSelect');
+    const listNameSelect = document.getElementById('listName'); // 共通リスト
+    const resultsDiv = document.getElementById('results');
+    const searchButtons = document.querySelectorAll('.search-btn');
+
     const modeSections = {
         shiritori: document.getElementById('shiritoriMode'),
-        wildcard: document.getElementById('wildcardMode'),
-        substring: document.getElementById('substringMode'),
-        wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
         wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
-        loop: document.getElementById('loopMode')
+        wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
+        loop: document.getElementById('loopMode'),
+        wildcard: document.getElementById('wildcardMode'),
+        substring: document.getElementById('substringMode')
     };
 
-    const searchButtons = document.querySelectorAll('.search-btn');
-    const resultsDiv = document.getElementById('results');
+    // ヘルパー関数: 要素が存在すれば値を、なければデフォルト値を返す
+    const getVal = (id) => document.getElementById(id)?.value || '';
+    const getChecked = (id) => document.getElementById(id)?.checked || false;
 
-    // --- 各モードの要素取得 ---
-    const listNameSelect = document.getElementById('listName');
-    const wildcardListNameSelect = document.getElementById('wildcardListName');
-    const substringListNameSelect = document.getElementById('substringListName');
-    const wordCountShiritoriListNameSelect = document.getElementById('wordCountShiritoriListName');
-    const wildcardShiritoriListNameSelect = document.getElementById('wildcardShiritoriListName');
-
-    // 文字指定しりとりモード
-    const firstCharInput = document.getElementById('firstChar');
-    const lastCharInput = document.getElementById('lastChar');
-    const wordCountTypeSelect = document.getElementById('wordCountType');
-    const wordCountInputContainer = document.getElementById('wordCountInputContainer');
-    const wordCountInput = document.getElementById('wordCount');
-    const includeCharsInput = document.getElementById('includeChars');
-    const excludeCharsInput = document.getElementById('excludeChars');
-    const noPrecedingWordCheckbox = document.getElementById('noPrecedingWord');
-    const noSucceedingWordCheckbox = document.getElementById('noSucceedingWord');
-    const requiredCharExactlyCheckbox = document.getElementById('requiredCharExactly');
-
-    // ？文字検索・部分一致
-    const wildcardTextInput = document.getElementById('wildcardText');
-    const substringTextInput = document.getElementById('substringText');
-
-    // 単語数指定しりとり
-    const wordCountInputsContainer = document.getElementById('wordCountInputs');
-    const addWordCountInputButton = document.getElementById('addWordCountInput');
-    const wordCountIncludeCharsInput = document.getElementById('wordCountIncludeChars');
-    const allowWordCountPermutationCheckbox = document.getElementById('allowWordCountPermutation');
-    const wordCountRequiredCharExactlyCheckbox = document.getElementById('wordCountRequiredCharExactly');
-
-    // --- ？文字指定しりとり（修正のメイン箇所） ---
-    const wordPatternList = document.getElementById('wordPatternList');
-    const addPatternBtn = document.getElementById('addPatternBtn');
-    const lastWordPatternInput = document.getElementById('lastWordPattern');
-    const wildcardShiritoriIncludeCharsInput = document.getElementById('wildcardShiritoriIncludeChars');
-    // HTMLにない可能性がある要素は、後で安全に取得します
-
-    // ループ検索
-    const loopPatternInput = document.getElementById('loopPattern');
-    const loopListNameSelect = document.getElementById('loopListName');
-
-    // --- ビュー切り替え ---
+    // --- 1. ビュー切り替えロジック ---
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
-        for (const mode in modeSections) {
+        Object.keys(modeSections).forEach(mode => {
             if (modeSections[mode]) {
-                modeSections[mode].classList.remove('active');
+                modeSections[mode].classList.toggle('active', mode === selectedMode);
             }
-        }
-        if (modeSections[selectedMode]) {
-            modeSections[selectedMode].classList.add('active');
-        }
+        });
     };
     modeSelect.addEventListener('change', updateModeView);
     updateModeView();
 
-    // --- 動的フィールド管理（単語数指定） ---
-    const getWordCountPatterns = () => {
-        return Array.from(document.querySelectorAll('#wordCountShiritoriMode .word-count-input'))
-            .map(input => input.value.trim())
-            .filter(val => val !== '')
-            .map(val => val.split(',').map(numStr => parseInt(numStr.trim(), 10)).filter(n => !isNaN(n) && n > 0));
-    };
+    // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
+    const wordPatternList = document.getElementById('wordPatternList');
+    const addPatternBtn = document.getElementById('addPatternBtn');
 
-    addWordCountInputButton.addEventListener('click', () => {
-        const newGroup = document.createElement('div');
-        newGroup.className = 'word-count-input-group';
-        newGroup.innerHTML = `
-            <input type="text" class="word-count-input" value="3" placeholder="例: 3,4">
-            <button class="remove-word-count-input">-</button>
-        `;
-        wordCountInputsContainer.appendChild(newGroup);
-    });
-
-    wordCountInputsContainer.addEventListener('click', (event) => {
-        if (event.target.classList.contains('remove-word-count-input')) {
-            if (wordCountInputsContainer.querySelectorAll('.word-count-input-group').length > 1) {
-                event.target.closest('.word-count-input-group').remove();
-            }
-        }
-    });
-
-    // --- 動的フィールド管理（？文字指定・中間単語） ---
-    if (addPatternBtn) {
+    if (addPatternBtn && wordPatternList) {
         addPatternBtn.addEventListener('click', () => {
             const currentItems = wordPatternList.querySelectorAll('.pattern-item');
             const newDiv = document.createElement('div');
@@ -109,149 +48,160 @@ document.addEventListener('DOMContentLoaded', () => {
             wordPatternList.appendChild(newDiv);
         });
 
-        wordPatternList.addEventListener('click', (event) => {
-            if (event.target.classList.contains('remove-pattern-btn')) {
-                event.target.closest('.pattern-item').remove();
-                // ラベルの更新
+        wordPatternList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-pattern-btn')) {
+                e.target.closest('.pattern-item').remove();
+                // ラベル番号の振り直し
                 wordPatternList.querySelectorAll('.pattern-item').forEach((item, index) => {
                     const label = item.querySelector('.label');
-                    label.textContent = `${index + 1}番目${index === 0 ? ' (開始)' : ''}:`;
+                    if (label) label.textContent = `${index + 1}番目:`;
                 });
             }
         });
     }
 
-    wordCountTypeSelect.addEventListener('change', (event) => {
-        wordCountInputContainer.style.display = (event.target.value === 'shortest') ? 'none' : 'block';
-    });
+    // --- 3. 動的フィールド管理：単語数指定しりとり (wordCountShiritori) ---
+    const wordCountInputsContainer = document.getElementById('wordCountInputs');
+    const addWordCountInputButton = document.getElementById('addWordCountInput');
 
-    // --- 結果表示 ---
-    const displayResults = (data, mode, wordCountType) => {
-        resultsDiv.innerHTML = '';
-        if (data.error) {
-            resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
-            return;
-        }
+    if (addWordCountInputButton) {
+        addWordCountInputButton.addEventListener('click', () => {
+            const newGroup = document.createElement('div');
+            newGroup.className = 'word-count-input-group';
+            newGroup.innerHTML = `
+                <input type="text" class="word-count-input" value="3" placeholder="例: 3,4">
+                <button class="remove-word-count-input">-</button>
+            `;
+            wordCountInputsContainer.appendChild(newGroup);
+        });
 
-        if (data.results && data.results.length > 0) {
-            let pathsToDisplay = data.results;
-            if (mode === 'shiritori' && wordCountType === 'shortest' && document.querySelector('input[name="outputType"]:checked').value === 'path') {
-                const pathLengths = pathsToDisplay.map(path => path.reduce((total, word) => total + word.length, 0));
-                const minLength = Math.min(...pathLengths);
-                pathsToDisplay = pathsToDisplay.filter((_, index) => pathLengths[index] === minLength);
-                resultsDiv.innerHTML = `<p>${data.results.length} 通り中、最短 ${pathsToDisplay.length} 通り（${minLength}文字）を表示:</p>`;
-            } else {
-                resultsDiv.innerHTML = `<p>${data.results.length} 通り見つかりました:</p>`;
+        wordCountInputsContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-word-count-input')) {
+                if (wordCountInputsContainer.querySelectorAll('.word-count-input-group').length > 1) {
+                    e.target.closest('.word-count-input-group').remove();
+                }
             }
-            const ul = document.createElement('ul');
-            pathsToDisplay.forEach((path, index) => {
-                const li = document.createElement('li');
-                li.textContent = `${index + 1}. ${path.join(' → ')}`;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-        } else if (data.wildcardMatches || data.substringMatches) {
-            const matches = data.wildcardMatches || data.substringMatches;
-            resultsDiv.innerHTML = `<p>${matches.length} 件見つかりました:</p>`;
-            const ul = document.createElement('ul');
-            matches.forEach(word => {
-                const li = document.createElement('li');
-                li.textContent = word;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-        } else {
-            resultsDiv.innerHTML = '<p class="no-results-message">条件に合う結果は見つかりませんでした。</p>';
-        }
-    };
+        });
+    }
 
-    // --- 検索実行 ---
+    // 文字数入力の表示制御
+    const wordCountTypeSelect = document.getElementById('wordCountType');
+    if (wordCountTypeSelect) {
+        wordCountTypeSelect.addEventListener('change', (e) => {
+            const container = document.getElementById('wordCountInputContainer');
+            if (container) container.style.display = (e.target.value === 'shortest') ? 'none' : 'block';
+        });
+    }
+
+    // --- 4. 検索実行メインロジック ---
     searchButtons.forEach(button => {
         button.addEventListener('click', async () => {
             resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
             const mode = modeSelect.value;
-            let apiPath, requestBody;
+            const commonListName = listNameSelect.value; // 共通リスト名を取得
+            
+            let apiPath = '';
+            let requestBody = {};
 
             try {
                 if (mode === 'shiritori') {
-                    const reqChars = includeCharsInput.value.trim() ? includeCharsInput.value.split(',').map(c => c.trim()) : null;
-                    requestBody = {
-                        listName: listNameSelect.value,
-                        firstChar: firstCharInput.value.trim() || null,
-                        lastChar: lastCharInput.value.trim() || null,
-                        wordCount: wordCountTypeSelect.value === 'fixed' ? parseInt(wordCountInput.value, 10) : 'shortest',
-                        requiredChars: reqChars,
-                        excludeChars: excludeCharsInput.value.trim(),
-                        noPrecedingWord: noPrecedingWordCheckbox.checked,
-                        noSucceedingWord: noSucceedingWordCheckbox.checked,
-                        outputType: document.querySelector('input[name="outputType"]:checked').value,
-                        requiredCharMode: requiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast'
-                    };
                     apiPath = '/api/shiritori';
-
-                } else if (mode === 'wildcard') {
-                    apiPath = '/api/wildcard_search';
-                    requestBody = { listName: wildcardListNameSelect.value, searchText: wildcardTextInput.value.trim() };
-
-                } else if (mode === 'substring') {
-                    apiPath = '/api/substring_search';
-                    requestBody = { listName: substringListNameSelect.value, searchText: substringTextInput.value.trim() };
-
-                } else if (mode === 'wordCountShiritori') {
-                    const reqChars = wordCountIncludeCharsInput.value.trim() ? wordCountIncludeCharsInput.value.split(',').map(c => c.trim()) : null;
+                    const includeStr = getVal('includeChars');
                     requestBody = {
-                        listName: wordCountShiritoriListNameSelect.value,
-                        wordCountPatterns: getWordCountPatterns(),
-                        requiredChars: reqChars,
-                        allowPermutation: allowWordCountPermutationCheckbox.checked,
-                        requiredCharMode: wordCountRequiredCharExactlyCheckbox.checked ? 'exactly' : 'atLeast'
+                        listName: commonListName,
+                        firstChar: getVal('firstChar').trim() || null,
+                        lastChar: getVal('lastChar').trim() || null,
+                        wordCount: getVal('wordCountType') === 'fixed' ? parseInt(getVal('wordCount'), 10) : 'shortest',
+                        requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
+                        excludeChars: getVal('excludeChars').trim(),
+                        outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
                     };
-                    apiPath = '/api/word_count_shiritori';
 
                 } else if (mode === 'wildcardShiritori') {
-                    // 安全な要素取得
-                    const exactlyCheck = document.getElementById('wildcardRequiredCharExactly');
-                    const wordCountField = document.getElementById('wildcardShiritoriWordCount');
-                    
-                    // パターンを集約（開始・中間の全て）
-                    const patterns = Array.from(document.querySelectorAll('#wordPatternList .word-pattern-input'))
-                                          .map(input => input.value.trim())
-                                          .filter(val => val !== '');
-                    
-                    // 最後の単語があれば追加
-                    const lastPat = lastWordPatternInput.value.trim();
-                    if (lastPat) patterns.push(lastPat);
-
-                    const reqChars = wildcardShiritoriIncludeCharsInput.value.trim() ? wildcardShiritoriIncludeCharsInput.value.split(',').map(c => c.trim()) : null;
-
-                    requestBody = {
-                        listName: wildcardShiritoriListNameSelect.value,
-                        patterns: patterns,
-                        // HTMLに単語数入力がない場合は、パターンの配列長を単語数とする
-                        wordCount: wordCountField ? parseInt(wordCountField.value, 10) : patterns.length,
-                        requiredChars: reqChars,
-                        requiredCharMode: (exactlyCheck && exactlyCheck.checked) ? 'exactly' : 'atLeast'
-                    };
                     apiPath = '/api/wildcard_shiritori';
+                    // 中間も含めた全てのパターン取得
+                    const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
+                                          .map(input => input.value.trim())
+                                          .filter(val => val !== "");
+                    requestBody = {
+                        listName: commonListName,
+                        patterns: patterns,
+                        wordCount: patterns.length
+                    };
+
+                } else if (mode === 'wordCountShiritori') {
+                    apiPath = '/api/word_count_shiritori';
+                    const patterns = Array.from(document.querySelectorAll('.word-count-input'))
+                                          .map(input => input.value.trim())
+                                          .filter(val => val !== '')
+                                          .map(val => val.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)));
+                    requestBody = {
+                        listName: commonListName,
+                        wordCountPatterns: patterns,
+                        allowPermutation: getChecked('allowWordCountPermutation')
+                    };
 
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
-                    requestBody = { listName: loopListNameSelect.value, pattern: loopPatternInput.value.trim() };
+                    requestBody = { listName: commonListName, pattern: getVal('loopPattern').trim() };
+
+                } else if (mode === 'wildcard') {
+                    apiPath = '/api/wildcard_search';
+                    requestBody = { listName: commonListName, searchText: getVal('wildcardText').trim() };
+
+                } else if (mode === 'substring') {
+                    apiPath = '/api/substring_search';
+                    requestBody = { listName: commonListName, searchText: getVal('substringText').trim() };
                 }
 
-                if (apiPath && requestBody) {
+                // APIリクエスト送信
+                if (apiPath) {
                     const response = await fetch(apiPath, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestBody)
                     });
                     const data = await response.json();
-                    displayResults(data, mode, mode === 'shiritori' ? wordCountTypeSelect.value : null);
+                    displayResults(data, mode);
                 }
+
             } catch (error) {
                 console.error("Fetch error:", error);
-                resultsDiv.innerHTML = '<p class="error-message">通信エラーが発生しました。</p>';
+                resultsDiv.innerHTML = '<p class="error-message">通信に失敗しました。サーバーが起動しているか確認してください。</p>';
             }
         });
     });
+
+    // --- 5. 結果表示ロジック ---
+    const displayResults = (data, mode) => {
+        resultsDiv.innerHTML = '';
+        if (data.error) {
+            resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
+            return;
+        }
+
+        // サーバーからのレスポンス形式（results / wildcardMatches / substringMatches）を統合
+        const results = data.results || data.wildcardMatches || data.substringMatches || [];
+
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<p class="placeholder">該当する単語や経路は見つかりませんでした。</p>';
+            return;
+        }
+
+        const summary = document.createElement('p');
+        summary.className = 'result-summary';
+        summary.textContent = `${results.length} 件の結果を表示します:`;
+        resultsDiv.appendChild(summary);
+
+        const ul = document.createElement('ul');
+        ul.className = 'result-list';
+        results.forEach((item, index) => {
+            const li = document.createElement('li');
+            // 配列（経路）の場合は矢印で繋ぎ、文字列（単語）の場合はそのまま表示
+            li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+            ul.appendChild(li);
+        });
+        resultsDiv.appendChild(ul);
+    };
 });
