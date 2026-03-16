@@ -1,3 +1,26 @@
+// =============================
+// 🚀 高速キャッシュ
+// =============================
+
+const allWordsCache = {};
+const lastCharCache = {};
+const firstCharCache = {};
+const regexWordCache = {};
+
+function getFirstChar(word) {
+    if (!firstCharCache[word]) {
+        firstCharCache[word] = normalizeWord(word);
+    }
+    return firstCharCache[word];
+}
+
+function getLastChar(word) {
+    if (!lastCharCache[word]) {
+        lastCharCache[word] = getShiritoriLastChar(word);
+    }
+    return lastCharCache[word];
+}
+
 const express = require('express');
 const fs = require('fs');
 const app = express();
@@ -52,38 +75,49 @@ function getShiritoriLastChar(word) {
 }
 
 function loadWordData() {
+
     const individualFiles = [KOKUMEI_KEY, SHUTOMEI_KEY];
 
     individualFiles.forEach(fileName => {
-        try {
-            const data = fs.readFileSync(fileName, 'utf8');
-            const words = data.split('\n')
-                             .map(w => w.trim())
-                             .filter(w => w.length > 0)
-                             .sort(); 
-            wordLists[fileName] = words;
-        } catch (err) {
-            console.error(`Error loading file ${fileName}:`, err.message);
-        }
+
+        const data = fs.readFileSync(fileName,'utf8');
+
+        const words = data
+            .split('\n')
+            .map(w=>w.trim())
+            .filter(w=>w.length>0)
+            .sort();
+
+        wordLists[fileName] = words;
+
+        allWordsCache[fileName] = words;
     });
 
-    if (wordLists[KOKUMEI_KEY] && wordLists[SHUTOMEI_KEY]) { 
-        const combinedWords = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]];
-        const uniqueWords = [...new Set(combinedWords)].sort();
-        wordLists[KOKUMEI_SHUTOMEI_KEY] = uniqueWords;
-    }
+    const combined = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]];
+
+    wordLists[KOKUMEI_SHUTOMEI_KEY] = [...new Set(combined)].sort();
+
+    allWordsCache[KOKUMEI_SHUTOMEI_KEY] = wordLists[KOKUMEI_SHUTOMEI_KEY];
+
 
     Object.keys(wordLists).forEach(listName => {
+
         wordMap[listName] = {};
+
         wordLists[listName].forEach(word => {
-            const startChar = normalizeWord(word);
-            if (!wordMap[listName][startChar]) {
-                wordMap[listName][startChar] = [];
+
+            const first = getFirstChar(word);
+
+            if(!wordMap[listName][first]){
+                wordMap[listName][first]=[];
             }
-            wordMap[listName][startChar].push(word);
+
+            wordMap[listName][first].push(word);
+
         });
-        shiritoriCache[listName] = {};
+
     });
+
 }
 
 /**
@@ -555,67 +589,84 @@ function patternToRegex(pattern) {
 
 // 2. 探索メインロジックの修正
 function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars, requiredCharMode) {
-    const allResults = [];
-    const collator = new Intl.Collator('ja', { sensitivity: 'base' });
-    const wordCount = wordPatterns.length;
 
-    // 各スロットごとの正規表現を事前に用意
-    const regexes = wordPatterns.map(p => patternToRegex(p));
-    const allWords = Object.values(wordMap).flat();
+    const results=[];
+    const collator=new Intl.Collator('ja',{sensitivity:'base'});
 
-    function backtrack(path, usedWords) {
-        const currentIndex = path.length;
+    const wordCount=wordPatterns.length;
 
-        // 目標の単語数に達した場合
-        if (currentIndex === wordCount) {
-            if (checkRequiredChars(path, requiredChars, requiredCharMode)) { 
-                allResults.push([...path]);
+    const regexes=wordPatterns.map(patternToRegex);
+
+    const allWords=Object.values(wordMap).flat();
+
+    const candidates=regexes.map(regex=>{
+
+        if(!regex)return allWords;
+
+        return allWords.filter(word=>regex.test(word));
+
+    });
+
+    function backtrack(index,path,used){
+
+        if(index===wordCount){
+
+            if(checkRequiredChars(path,requiredChars,requiredCharMode)){
+
+                results.push([...path]);
+
             }
+
             return;
-        }
-        
-        // 前の単語の最後の文字を取得
-        const lastWord = path[path.length - 1];
-        const lastCharOfCurrent = getShiritoriLastChar(lastWord);
-        if (!lastCharOfCurrent) return;
-        
-        // しりとりとして繋がる候補を取得
-        const nextWords = wordMap[lastCharOfCurrent] || [];
-        const currentRegex = regexes[currentIndex]; 
 
-        for (const word of nextWords) {
-            if (!usedWords.has(word)) {
-                // 【重要】現在のスロットのパターンに合致するかチェック
-                // パターンが指定されていない（null）場合は全通し
-                if (!currentRegex || currentRegex.test(word)) {
-                    path.push(word);
-                    usedWords.add(word);
-                    backtrack(path, usedWords);
-                    usedWords.delete(word);
-                    path.pop();
-                }
-            }
         }
+
+        const words=candidates[index];
+
+        for(const word of words){
+
+            if(used.has(word))continue;
+
+            if(index>0){
+
+                const prev=path[path.length-1];
+
+                if(getLastChar(prev)!==getFirstChar(word))continue;
+
+            }
+
+            used.add(word);
+            path.push(word);
+
+            backtrack(index+1,path,used);
+
+            path.pop();
+            used.delete(word);
+
+        }
+
     }
 
-    // --- 最初の単語 (index 0) の選定 ---
-    const firstRegex = regexes[0];
-    // 最初の単語は「最初のパターンに合う」かつ「リストに存在する」もの
-    const startingWords = firstRegex 
-        ? allWords.filter(word => firstRegex.test(word)) 
-        : allWords;
+    backtrack(0,[],new Set());
 
-    for (const word of startingWords) {
-        if (wordCount === 1) {
-            if (checkRequiredChars([word], requiredChars, requiredCharMode)) { 
-                allResults.push([word]);
-            }
-            continue;
+    const unique=[];
+    const seen=new Set();
+
+    for(const r of results){
+
+        const key=r.join(',');
+
+        if(!seen.has(key)){
+
+            seen.add(key);
+            unique.push(r);
+
         }
-        backtrack([word], new Set([word]));
+
     }
 
-    return allResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
+    return unique.sort((a,b)=>collator.compare(a.join(''),b.join('')));
+
 }
 // === Express エンドポイント ===
 
