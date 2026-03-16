@@ -544,35 +544,29 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
     return finalResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
-
+// 1. 正規表現作成関数の微調整
 function patternToRegex(pattern) {
+    if (!pattern || pattern.trim() === '') return null;
+    // 特殊文字をエスケープしつつ、？と?を . に変換
     let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
-    // 💡 半角の「?」と全角の「？」を両方とも正規表現の「.」に変換する
     regexString = regexString.replace(/[?？]/g, '.'); 
     return new RegExp('^' + regexString + '$');
 }
-// 💡 引数を first/last ではなく wordPatterns（パターンの配列）に変更
+
+// 2. 探索メインロジックの修正
 function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars, requiredCharMode) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
-    
-    // 配列の長さがそのまま単語数になります
     const wordCount = wordPatterns.length;
 
-    // 各位置の単語に対応する正規表現の配列を作成（空文字やnullなら制限なし）
-    const regexes = wordPatterns.map(pattern => {
-        return (pattern && pattern.trim() !== '') ? patternToRegex(pattern.trim()) : null;
-    });
-
+    // 各スロットごとの正規表現を事前に用意
+    const regexes = wordPatterns.map(p => patternToRegex(p));
     const allWords = Object.values(wordMap).flat();
-
-    // 最初の単語は、0番目の正規表現にマッチするものだけに絞る
-    const firstRegex = regexes[0];
-    const startingWords = firstRegex ? allWords.filter(word => firstRegex.test(word)) : allWords;
 
     function backtrack(path, usedWords) {
         const currentIndex = path.length;
 
+        // 目標の単語数に達した場合
         if (currentIndex === wordCount) {
             if (checkRequiredChars(path, requiredChars, requiredCharMode)) { 
                 allResults.push([...path]);
@@ -580,15 +574,19 @@ function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars,
             return;
         }
         
-        const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
+        // 前の単語の最後の文字を取得
+        const lastWord = path[path.length - 1];
+        const lastCharOfCurrent = getShiritoriLastChar(lastWord);
         if (!lastCharOfCurrent) return;
         
+        // しりとりとして繋がる候補を取得
         const nextWords = wordMap[lastCharOfCurrent] || [];
-        const currentRegex = regexes[currentIndex]; // 💡 今探索している順番に対応する正規表現
+        const currentRegex = regexes[currentIndex]; 
 
         for (const word of nextWords) {
             if (!usedWords.has(word)) {
-                // 💡 その位置のパターンに合致するかチェック
+                // 【重要】現在のスロットのパターンに合致するかチェック
+                // パターンが指定されていない（null）場合は全通し
                 if (!currentRegex || currentRegex.test(word)) {
                     path.push(word);
                     usedWords.add(word);
@@ -599,6 +597,13 @@ function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars,
             }
         }
     }
+
+    // --- 最初の単語 (index 0) の選定 ---
+    const firstRegex = regexes[0];
+    // 最初の単語は「最初のパターンに合う」かつ「リストに存在する」もの
+    const startingWords = firstRegex 
+        ? allWords.filter(word => firstRegex.test(word)) 
+        : allWords;
 
     for (const word of startingWords) {
         if (wordCount === 1) {
@@ -612,7 +617,6 @@ function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars,
 
     return allResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
-
 // === Express エンドポイント ===
 
 // サーバー起動時にデータをロード
