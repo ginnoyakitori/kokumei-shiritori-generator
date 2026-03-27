@@ -20,6 +20,9 @@
                 <option value="kokumei.txt">国名</option>
                 <option value="shutomei.txt">首都名</option>
                 <option value="kokumei_shutomei.txt">国名と首都名</option>
+                <option value="pokemon.txt">ポケモン</option>
+                <option value="countries-only.txt">共役削除国名</option>
+                <option value="capitals-only.txt">共役削除首都名</option>
             </select>
         </div>
 
@@ -75,9 +78,13 @@
                 <label>出力オプション</label>
                 <div class="radio-group">
                     <input type="radio" id="outputPath" name="outputType" value="path" checked>
-                    <label for="outputPath">経路表示</label>
+                    <label for="outputPath">経路表示（すべて表示）</label>
+                    <br>
                     <input type="radio" id="outputFirstCount" name="outputType" value="firstCharCount">
                     <label for="outputFirstCount">開始文字別集計</label>
+                    <br>
+                    <input type="radio" id="outputLastCount" name="outputType" value="lastCharCount">
+                    <label for="outputLastCount">終了文字別集計</label>
                 </div>
             </div>
             <button class="search-btn primary">しりとり経路を検索</button>

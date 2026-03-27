@@ -117,25 +117,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
                         requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
                     };
-} else if (mode === 'wildcardShiritori') {
-apiPath = '/api/wildcard_shiritori';
+                } else if (mode === 'wildcardShiritori') {
+                    apiPath = '/api/wildcard_shiritori';
 
-const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
-    .map(input => input.value.trim())
-    .filter(val => val !== "");
+                    const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
+                        .map(input => input.value.trim())
+                        .filter(val => val !== "");
 
-const includeStr = getVal('includeChars');
+                    const includeStr = getVal('includeChars');
 
-requestBody = {
-    listName: commonListName,
-    wordPatterns: patterns,
-    requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
-    requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
-};
-
-
-
-
+                    requestBody = {
+                        listName: commonListName,
+                        wordPatterns: patterns,
+                        requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
+                    };
 
                 } else if (mode === 'wordCountShiritori') {
                     apiPath = '/api/word_count_shiritori';
@@ -188,27 +184,69 @@ requestBody = {
             return;
         }
 
-        // サーバーからのレスポンス形式（results / wildcardMatches / substringMatches）を統合
+        // サーバーからのレスポンス形式を統合
         const results = data.results || data.wildcardMatches || data.substringMatches || [];
+        const firstCharCounts = data.firstCharCounts || {};
+        const lastCharCounts = data.lastCharCounts || {};
 
-        if (results.length === 0) {
+        if (results.length === 0 && Object.keys(firstCharCounts).length === 0 && Object.keys(lastCharCounts).length === 0) {
             resultsDiv.innerHTML = '<p class="placeholder">該当する単語や経路は見つかりませんでした。</p>';
             return;
         }
 
-        const summary = document.createElement('p');
-        summary.className = 'result-summary';
-        summary.textContent = `${results.length} 件の結果を表示します:`;
-        resultsDiv.appendChild(summary);
+        // 経路表示モード（すべて表示）
+        if (results.length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = `${results.length} 件の結果を表示します:`;
+            resultsDiv.appendChild(summary);
 
-        const ul = document.createElement('ul');
-        ul.className = 'result-list';
-        results.forEach((item, index) => {
-            const li = document.createElement('li');
-            // 配列（経路）の場合は矢印で繋ぎ、文字列（単語）の場合はそのまま表示
-            li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
-            ul.appendChild(li);
-        });
-        resultsDiv.appendChild(ul);
+            const ul = document.createElement('ul');
+            ul.className = 'result-list';
+            results.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+                ul.appendChild(li);
+            });
+            resultsDiv.appendChild(ul);
+        }
+
+        // 開始文字別集計モード
+        if (Object.keys(firstCharCounts).length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = '開始文字別集計:';
+            resultsDiv.appendChild(summary);
+
+            const table = document.createElement('table');
+            table.className = 'count-table';
+            table.innerHTML = '<tr><th>開始文字</th><th>件数</th></tr>';
+            
+            Object.entries(firstCharCounts).forEach(([char, count]) => {
+                const row = table.insertRow();
+                row.innerHTML = `<td>${char}</td><td>${count}</td>`;
+            });
+            
+            resultsDiv.appendChild(table);
+        }
+
+        // 終了文字別集計モード
+        if (Object.keys(lastCharCounts).length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = '終了文字別集計:';
+            resultsDiv.appendChild(summary);
+
+            const table = document.createElement('table');
+            table.className = 'count-table';
+            table.innerHTML = '<tr><th>終了文字</th><th>件数</th></tr>';
+            
+            Object.entries(lastCharCounts).forEach(([char, count]) => {
+                const row = table.insertRow();
+                row.innerHTML = `<td>${char}</td><td>${count}</td>`;
+            });
+            
+            resultsDiv.appendChild(table);
+        }
     };
 });
