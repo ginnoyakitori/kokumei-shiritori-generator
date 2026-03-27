@@ -2,7 +2,6 @@ body {
     font-family: 'Arial', sans-serif;
     background-color: #f0f2f5;
     color: #333;
-    /* 💡 ���正: 行の高さを狭くする */
     line-height: 1.4; 
     margin: 0;
     padding: 0;
@@ -19,16 +18,13 @@ body {
 
 header {
     text-align: center;
-    /* 💡 修正: 上下のパディングを減らす */
     padding-bottom: 15px; 
     border-bottom: 2px solid #e0e0e0;
-    /* 💡 修正: 下のマージンを減らす */
     margin-bottom: 15px; 
 }
 
 h1 {
     color: #444;
-    /* 💡 修正: 上下のマージンを減らす */
     margin-top: 0.5em; 
     margin-bottom: 0.5em;
 }
@@ -51,24 +47,20 @@ h1 {
 }
 
 h2 {
-    /* 💡 修正: 上のマージンは0のまま、下を削減 */
     margin-top: 0;
     color: #555;
     border-bottom: 1px solid #ccc;
     padding-bottom: 10px;
-    /* 💡 修正: 下のマージンを減らす */
     margin-bottom: 15px; 
 }
 
 .form-group {
-    /* 💡 修正: form-group間のマージンを少し削減 */
     margin-bottom: 12px; 
 }
 
 label {
     display: block;
     font-weight: bold;
-    /* 💡 修正: ラベルと入力欄の間の空白を狭くする */
     margin-bottom: 3px; 
 }
 
@@ -81,21 +73,18 @@ select {
     border-radius: 5px;
     box-sizing: border-box;
     font-size: 16px;
-    /* 💡 追記: 要素自体のline-heightを調整してテキスト上下の空白を詰める */
     line-height: 1.2; 
 }
 
 .search-btn,
 .add-btn,
-.remove-word-count-input,
-.output-options .btn {
+.remove-word-count-input {
     padding: 10px 20px;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     font-size: 16px;
     transition: background-color 0.3s, transform 0.1s;
-    /* 💡 追記: ボタン内のテキスト上下の空白を詰める */
     line-height: 1.2; 
 }
 
@@ -108,36 +97,6 @@ select {
 
 .search-btn:hover {
     background-color: #45a049;
-}
-
-.output-options {
-    margin-top: 20px;
-}
-
-.output-options .button-group {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-}
-
-.output-options input[type="radio"] {
-    display: none;
-}
-
-.output-options .btn {
-    background-color: #e0e0e0;
-    color: #555;
-    text-align: center;
-    flex-grow: 1;
-}
-
-.output-options input[type="radio"]:checked + .btn {
-    background-color: #007BFF;
-    color: white;
-}
-
-.output-options .btn:hover {
-    background-color: #ccc;
 }
 
 .add-btn,
@@ -172,7 +131,6 @@ select {
 }
 
 .results-container h3 {
-    /* 💡 修正: 結果セクションの見出しの上下の空白を詰める */
     margin-top: 0.5em;
     margin-bottom: 1em; 
     color: #444;
@@ -183,7 +141,6 @@ select {
     color: #444;
 }
 
-/* 💡 新規追加: 結果エリアの段落（例: 件数表示）の上下の空白を狭くする */
 #results p {
     margin-top: 0.5em;
     margin-bottom: 0.5em;
@@ -198,7 +155,6 @@ select {
     background-color: #f0f8ff;
     border: 1px solid #e0eaf4;
     padding: 10px 15px;
-    /* 💡 修正: リスト項目間の空白を狭くする */
     margin-bottom: 5px; 
     border-radius: 5px;
     transition: transform 0.2s, box-shadow 0.2s;
@@ -210,7 +166,45 @@ select {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* 💡 新規追加: 集計結��用テーブル */
+/* 出力オプション：横向きレイアウト */
+.radio-group {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.radio-group input[type="radio"] {
+    margin-right: 5px;
+}
+
+.radio-group label {
+    display: inline;
+    font-weight: normal;
+    margin-bottom: 0;
+    padding: 8px 16px;
+    border: 2px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    background-color: #f9f9f9;
+    transition: all 0.3s;
+}
+
+.radio-group input[type="radio"]:checked + label {
+    background-color: #4CAF50;
+    color: white;
+    border-color: #45a049;
+}
+
+.radio-group label:hover {
+    background-color: #e8f5e9;
+}
+
+.radio-group input[type="radio"]:checked + label:hover {
+    background-color: #45a049;
+}
+
+/* 集計結果用テーブル */
 .count-table {
     width: 100%;
     border-collapse: collapse;
@@ -260,37 +254,15 @@ select {
     }
 }
 
-/* レスポンシブ対応 */
-@media (max-width: 600px) {
-    .container {
-        padding: 10px;
-    }
-    .output-options .button-group {
-        flex-direction: column;
-    }
-    .output-options .btn {
-        width: 100%;
-    }
-    .count-table th,
-    .count-table td {
-        padding: 8px;
-        font-size: 0.9em;
-    }
-}
-
 /* ラジオボタンとチェックボックスのスタイル */
-.radio-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.checkbox-group {
+    margin-top: 8px;
 }
 
-.radio-group input[type="radio"],
 .checkbox-group input[type="checkbox"] {
     margin-right: 8px;
 }
 
-.radio-group label,
 .checkbox-group label {
     display: inline;
     font-weight: normal;
@@ -331,6 +303,18 @@ select {
 @media (max-width: 600px) {
     .form-row {
         grid-template-columns: 1fr;
+    }
+    .count-table th,
+    .count-table td {
+        padding: 8px;
+        font-size: 0.9em;
+    }
+    .radio-group {
+        flex-direction: column;
+    }
+    .radio-group label {
+        width: 100%;
+        text-align: center;
     }
 }
 

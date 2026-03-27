@@ -36,10 +36,13 @@ let wordLists = {};
 let wordMap = {}; 
 const shiritoriCache = {};
 
-const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt'];
+const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt', 'pokemon.txt', 'countries-only.txt', 'capitals-only.txt'];
 const KOKUMEI_KEY = 'kokumei.txt';
 const SHUTOMEI_KEY = 'shutomei.txt';
 const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
+const POKEMON_KEY = 'pokemon.txt';
+const COUNTRIES_ONLY_KEY = 'countries-only.txt';
+const CAPITALS_ONLY_KEY = 'capitals-only.txt';
 
 // === 共通関数 ===
 
@@ -78,21 +81,27 @@ function getShiritoriLastChar(word) {
 
 function loadWordData() {
 
-    const individualFiles = [KOKUMEI_KEY, SHUTOMEI_KEY];
+    const individualFiles = [KOKUMEI_KEY, SHUTOMEI_KEY, POKEMON_KEY, COUNTRIES_ONLY_KEY, CAPITALS_ONLY_KEY];
 
     individualFiles.forEach(fileName => {
 
-        const data = fs.readFileSync(fileName,'utf8');
+        try {
+            const data = fs.readFileSync(fileName, 'utf8');
 
-        const words = data
-            .split('\n')
-            .map(w=>w.trim())
-            .filter(w=>w.length>0)
-            .sort();
+            const words = data
+                .split('\n')
+                .map(w => w.trim())
+                .filter(w => w.length > 0)
+                .sort();
 
-        wordLists[fileName] = words;
+            wordLists[fileName] = words;
 
-        allWordsCache[fileName] = words;
+            allWordsCache[fileName] = words;
+        } catch (e) {
+            console.warn(`Warning: Could not load ${fileName}:`, e.message);
+            wordLists[fileName] = [];
+            allWordsCache[fileName] = [];
+        }
     });
 
     const combined = [...wordLists[KOKUMEI_KEY], ...wordLists[SHUTOMEI_KEY]];
@@ -110,8 +119,8 @@ function loadWordData() {
 
             const first = getFirstChar(word);
 
-            if(!wordMap[listName][first]){
-                wordMap[listName][first]=[];
+            if (!wordMap[listName][first]) {
+                wordMap[listName][first] = [];
             }
 
             wordMap[listName][first].push(word);
@@ -344,13 +353,13 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                   if (isNoSucceeding && 
                       checkRequiredChars(path, requiredChars, requiredCharMode) && 
                       checkExcludeChars(path, excludeChars)) {
-                     
-                     if (currentLength < shortestLength) {
-                         shortestLength = currentLength;
-                         shortestPaths = [path];
-                     } else if (currentLength === shortestLength) {
-                         shortestPaths.push(path);
-                     }
+                      
+                      if (currentLength < shortestLength) {
+                          shortestLength = currentLength;
+                          shortestPaths = [path];
+                      } else if (currentLength === shortestLength) {
+                          shortestPaths.push(path);
+                      }
                   }
              }
 
@@ -365,7 +374,7 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
             if (!usedWords.has(nextWord)) {
                 const nextLength = currentLength + nextWord.length;
                 
-                // 次のパス長が確定した最短長を超えていればスキップ
+                // 次のパス長が確定した最短長を超えていれ��スキップ
                 if (nextLength > shortestLength) continue;
 
                 const newPath = [...path, nextWord];
