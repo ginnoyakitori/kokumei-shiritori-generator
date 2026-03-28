@@ -132,6 +132,18 @@ function loadWordData() {
 }
 
 /**
+ * 単語の文字数がすべて異なる経路のみを抽出
+ * 例：3単語の経路が [2,3,4] の組み合わせなら OK、[2,3,3] ならNG
+ */
+function filterUniqueWordLengths(results) {
+    return results.filter(path => {
+        const lengths = path.map(word => word.length);
+        const uniqueLengths = new Set(lengths);
+        return lengths.length === uniqueLengths.size;
+    });
+}
+
+/**
  * 最初と最後の文字の組み合わせが唯一の経路のみを抽出
  * 例：ア→ド の組み合わせが複数ある場合、そのすべてを除外
  */
@@ -435,7 +447,7 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                 }
 
                 // 4. 次の探索のためにキューに追加
-                // 既にこの単語に、より短い文字数で到達していなければ更新
+                // 既にこの単語に、より短い文字数で到達していなければ���新
                 if (!minPathLength[nextWord] || nextLength < minPathLength[nextWord]) {
                     minPathLength[nextWord] = nextLength; 
                     pq.push([nextLength, nextWord, newPath]); 
@@ -714,7 +726,7 @@ loadWordData();
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniquePairOnly } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -754,7 +766,12 @@ app.post('/api/shiritori', (req, res) => {
             // 🚨 文字数最短を検索するダイクストラ法ベースの関数を呼び出し 🚨
             results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
             
-            // uniquePairOnly フィルタリング
+            // uniqueWordLengths フィルタリング
+            if (uniqueWordLengths) {
+                results = filterUniqueWordLengths(results);
+            }
+            
+            // uniquePairOnly フィルタリング（最後）
             if (uniquePairOnly) {
                 results = filterUniquePairOnly(results);
             }
@@ -774,7 +791,12 @@ app.post('/api/shiritori', (req, res) => {
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
         
-        // uniquePairOnly フィルタリング
+        // uniqueWordLengths フィルタリング
+        if (uniqueWordLengths) {
+            results = filterUniqueWordLengths(results);
+        }
+        
+        // uniquePairOnly フィルタリング（最後）
         if (uniquePairOnly) {
             results = filterUniquePairOnly(results);
         }
@@ -813,7 +835,12 @@ app.post('/api/shiritori', (req, res) => {
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
         
-        // uniquePairOnly フィルタリング
+        // uniqueWordLengths フィルタリング
+        if (uniqueWordLengths) {
+            results = filterUniqueWordLengths(results);
+        }
+        
+        // uniquePairOnly フィルタリング（最後）
         if (uniquePairOnly) {
             results = filterUniquePairOnly(results);
         }
@@ -999,7 +1026,7 @@ app.post('/api/loop_shiritori', (req, res) => {
         res.json({ results });
     } catch (e) {
         console.error(e);
-        res.status(500).json({ error: '探索中にエラーが発生しました。' });
+        res.status(500).json({ error: '探索中にエラーが発���しました。' });
     }
 });
 // サーバー起動

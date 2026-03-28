@@ -116,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         excludeChars: getVal('excludeChars').trim(),
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
                         requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
+                        uniqueWordLengths: getChecked('uniqueWordLengths'),
                         uniquePairOnly: getChecked('uniquePairOnly')
                     };
                 } else if (mode === 'wildcardShiritori') {
