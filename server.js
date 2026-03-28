@@ -874,8 +874,9 @@ app.post('/api/shiritori', (req, res) => {
 
 
 // 単語数指定しりとり (必須文字複数文字列対応)
+// 単語数指定しりとり (必須文字複数文字列対応)
 app.post('/api/word_count_shiritori', (req, res) => {
-    let { listName, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode } = req.body;
+    let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths } = req.body;
     const map = wordMap[listName];
 
     if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
@@ -887,16 +888,16 @@ app.post('/api/word_count_shiritori', (req, res) => {
         return res.status(400).json({ error: '単語数の指定は1以上の数字である必要があります（例: [[2, 3], [4]]）。' });
     }
 
-    if (requiredChars && requiredChars.length === 0) {
-        requiredChars = null;
-    } 
-
-    const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
-
     const startTime = Date.now();
 
     try {
-        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode, listName);
+        let results = findShiritoriByWordCountPatterns(map, wordCountPatterns, null, allowPermutation, 'atLeast', listName);
+        
+        // uniqueWordLengths フィルタリング
+        if (uniqueWordLengths) {
+            results = filterUniqueWordLengths(results);
+        }
+        
         const elapsed = Date.now() - startTime;
         console.log(`Word count shiritori search completed in ${elapsed}ms (${results.length} results)`);
         
@@ -906,7 +907,6 @@ app.post('/api/word_count_shiritori', (req, res) => {
         return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
     }
 });
-
 
 // ？文字検索 (既存)
 app.post('/api/wildcard_search', (req, res) => {

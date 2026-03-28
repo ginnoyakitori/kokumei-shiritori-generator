@@ -144,7 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     requestBody = {
                         listName: commonListName,
                         wordCountPatterns: patterns,
-                        allowPermutation: getChecked('allowWordCountPermutation')
+                        allowPermutation: getChecked('allowWordCountPermutation'),
+                        uniqueWordLengths: getChecked('uniqueWordLengthsWordCount')
                     };
 
                 } else if (mode === 'loop') {
