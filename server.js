@@ -132,6 +132,34 @@ function loadWordData() {
 }
 
 /**
+ * 最初と最後の文字の組み合わせが唯一の経路のみを抽出
+ * 例：ア→ド の組み合わせが複数ある場合、そのすべてを除外
+ */
+function filterUniquePairOnly(results) {
+    // 各経路の「開始文字→終了文字」の組み合わせをカウント
+    const pairCounts = {};
+    
+    results.forEach(path => {
+        const firstChar = normalizeWord(path[0]);
+        const lastChar = getShiritoriLastChar(path[path.length - 1]);
+        const pairKey = `${firstChar}→${lastChar}`;
+        
+        pairCounts[pairKey] = (pairCounts[pairKey] || 0) + 1;
+    });
+    
+    // 組み合わせが1つだけの経路のみをフィルタ
+    const filteredResults = results.filter(path => {
+        const firstChar = normalizeWord(path[0]);
+        const lastChar = getShiritoriLastChar(path[path.length - 1]);
+        const pairKey = `${firstChar}→${lastChar}`;
+        
+        return pairCounts[pairKey] === 1;
+    });
+    
+    return filteredResults;
+}
+
+/**
  * 必須文字のチェックを部分文字列の出現回数ベースで実行
  */
 function checkRequiredChars(path, requiredChars, requiredCharMode) {
@@ -374,7 +402,7 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
             if (!usedWords.has(nextWord)) {
                 const nextLength = currentLength + nextWord.length;
                 
-                // 次のパス長が確定した最短長を超えていれ��スキップ
+                // 次のパス長が確定した最短長を超えていればスキップ
                 if (nextLength > shortestLength) continue;
 
                 const newPath = [...path, nextWord];
@@ -686,7 +714,7 @@ loadWordData();
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniquePairOnly } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -725,6 +753,12 @@ app.post('/api/shiritori', (req, res) => {
         try {
             // 🚨 文字数最短を検索するダイクストラ法ベースの関数を呼び出し 🚨
             results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+            
+            // uniquePairOnly フィルタリング
+            if (uniquePairOnly) {
+                results = filterUniquePairOnly(results);
+            }
+            
             return res.json({ results });
         } catch (e) {
             console.error("Error in shortest path (Dijkstra) shiritori:", e);
@@ -739,6 +773,11 @@ app.post('/api/shiritori', (req, res) => {
         }
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        
+        // uniquePairOnly フィルタリング
+        if (uniquePairOnly) {
+            results = filterUniquePairOnly(results);
+        }
         
         const counts = {};
         results.forEach(path => {
@@ -773,6 +812,12 @@ app.post('/api/shiritori', (req, res) => {
         }
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        
+        // uniquePairOnly フィルタリング
+        if (uniquePairOnly) {
+            results = filterUniquePairOnly(results);
+        }
+        
         return res.json({ results });
     }
 });
