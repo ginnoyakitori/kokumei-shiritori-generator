@@ -35,7 +35,7 @@ function getLastChar(word) {
 let wordLists = {};
 let wordMap = {}; 
 let wordsByLength = {}; // 文字数でインデックス化
-let wordsByLastChar = {}; // 最後の文字でインデックス化
+let wordsByFirstChar = {}; // 最初の文字でインデックス化
 const shiritoriCache = {};
 
 const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt', 'pokemon.txt', 'countries-only.txt', 'capitals-only.txt'];
@@ -110,21 +110,21 @@ function loadWordData() {
                 wordsByLength[fileName][len].push(word);
             });
             
-            // 最後の文字でインデックス化
-            wordsByLastChar[fileName] = {};
+            // 最初の文字でインデックス化（最後の文字→最初の文字でつなぐため）
+            wordsByFirstChar[fileName] = {};
             words.forEach(word => {
-                const lastChar = getShiritoriLastChar(word);
-                if (!wordsByLastChar[fileName][lastChar]) {
-                    wordsByLastChar[fileName][lastChar] = [];
+                const firstChar = normalizeWord(word);
+                if (!wordsByFirstChar[fileName][firstChar]) {
+                    wordsByFirstChar[fileName][firstChar] = [];
                 }
-                wordsByLastChar[fileName][lastChar].push(word);
+                wordsByFirstChar[fileName][firstChar].push(word);
             });
         } catch (e) {
             console.warn(`Warning: Could not load ${fileName}:`, e.message);
             wordLists[fileName] = [];
             allWordsCache[fileName] = [];
             wordsByLength[fileName] = {};
-            wordsByLastChar[fileName] = {};
+            wordsByFirstChar[fileName] = {};
         }
     });
 
@@ -136,7 +136,7 @@ function loadWordData() {
     
     // 複合リスト用のインデックス化
     wordsByLength[KOKUMEI_SHUTOMEI_KEY] = {};
-    wordsByLastChar[KOKUMEI_SHUTOMEI_KEY] = {};
+    wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY] = {};
     wordLists[KOKUMEI_SHUTOMEI_KEY].forEach(word => {
         const len = word.length;
         if (!wordsByLength[KOKUMEI_SHUTOMEI_KEY][len]) {
@@ -144,11 +144,11 @@ function loadWordData() {
         }
         wordsByLength[KOKUMEI_SHUTOMEI_KEY][len].push(word);
         
-        const lastChar = getShiritoriLastChar(word);
-        if (!wordsByLastChar[KOKUMEI_SHUTOMEI_KEY][lastChar]) {
-            wordsByLastChar[KOKUMEI_SHUTOMEI_KEY][lastChar] = [];
+        const firstChar = normalizeWord(word);
+        if (!wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar]) {
+            wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar] = [];
         }
-        wordsByLastChar[KOKUMEI_SHUTOMEI_KEY][lastChar].push(word);
+        wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar].push(word);
     });
 
     Object.keys(wordLists).forEach(listName => {
@@ -188,7 +188,7 @@ function filterUniqueWordLengths(results) {
  * 例：ア→ド の組み合わせが複数ある場合、そのすべてを除外
  */
 function filterUniquePairOnly(results) {
-    // 各経路の「開始文字→終了文字」の組み合わせをカウント
+    // 各経路の「開始文字→終了文字」の組み合���せをカウント
     const pairCounts = {};
     
     results.forEach(path => {
@@ -443,8 +443,8 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
              if (lastCharOfCurrent === 'ン' || currentLength === shortestLength) continue;
         }
 
-        // wordsByLastChar を使った高速なNext単語取得
-        const nextWords = wordsByLastChar[listName][lastCharOfCurrent] || [];
+        // wordsByFirstChar を使った高速なNext単語取得
+        const nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
 
         for (const nextWord of nextWords) {
             if (!usedWords.has(nextWord)) {
@@ -504,7 +504,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
             const endChar = getShiritoriLastChar(lastWord);
             
             if (noSucceedingWord) {
-                const nextWordList = wordsByLastChar[listName][endChar] || [];
+                const nextWordList = wordsByFirstChar[listName][endChar] || [];
                 const hasNextWord = nextWordList.some(word => !usedWords.has(word));
                 if (hasNextWord) {
                     return; 
@@ -522,7 +522,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
         const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
         if (!lastCharOfCurrent) return;
         
-        const nextWords = wordsByLastChar[listName][lastCharOfCurrent] || [];
+        const nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
 
         for (const word of nextWords) {
             if (!usedWords.has(word)) {
@@ -554,7 +554,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
              
              let isNoSucceeding = true;
              if (noSucceedingWord) {
-               const nextWordList = wordsByLastChar[listName][endChar] || [];
+               const nextWordList = wordsByFirstChar[listName][endChar] || [];
                isNoSucceeding = !nextWordList.some(nextWord => nextWord !== word);
              }
              
@@ -619,7 +619,7 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
             } else {
                 const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
                 if (!lastCharOfCurrent) return;
-                nextWords = wordsByLastChar[listName][lastCharOfCurrent] || [];
+                nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
             }
 
             // 文字数でフィルタリング（つながっている単語のみ）
@@ -1003,7 +1003,7 @@ function findLoopShiritori(wordMap, pattern, listName) {
         if (currentStr.length > L) return;
 
         const lastChar = getShiritoriLastChar(path[path.length - 1]);
-        const nextWords = wordsByLastChar[listName][lastChar] || [];
+        const nextWords = wordsByFirstChar[listName][lastChar] || [];
         for (const nextWord of nextWords) {
             if (!path.includes(nextWord)) {
                 backtrack([...path, nextWord], currentStr + nextWord);
