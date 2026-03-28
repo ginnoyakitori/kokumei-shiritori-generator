@@ -622,15 +622,15 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
                 nextWords = wordsByLastChar[listName][lastCharOfCurrent] || [];
             }
 
-            // 文字数でフィルタリング
-            const filteredWords = (wordsByLength[listName][requiredLength] || []).filter(w => !usedWords.has(w) && nextWords.includes(w));
-
-            for (const word of filteredWords) {
-                path.push(word);
-                usedWords.add(word);
-                backtrack(path, usedWords, patternIndex + 1);
-                usedWords.delete(word);
-                path.pop();
+            // 文字数でフィルタリング（つながっている単語のみ）
+            for (const word of nextWords) {
+                if (!usedWords.has(word) && word.length === requiredLength) {
+                    path.push(word);
+                    usedWords.add(word);
+                    backtrack(path, usedWords, patternIndex + 1);
+                    usedWords.delete(word);
+                    path.pop();
+                }
             }
         }
         
