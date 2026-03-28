@@ -174,13 +174,12 @@ select {
     flex-wrap: wrap;
 }
 
-/* ラジオボタンを非表示 */
 .radio-group input[type="radio"] {
-    display: none;
+    margin-right: 5px;
 }
 
 .radio-group label {
-    display: inline-block;
+    display: inline;
     font-weight: normal;
     margin-bottom: 0;
     padding: 8px 16px;
@@ -258,23 +257,16 @@ select {
 /* ラジオボタンとチェックボックスのスタイル */
 .checkbox-group {
     margin-top: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
 }
 
 .checkbox-group input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    margin: 0;
+    margin-right: 8px;
 }
 
 .checkbox-group label {
     display: inline;
     font-weight: normal;
     margin-bottom: 0;
-    cursor: pointer;
 }
 
 /* パターンアイテムのスタイル */

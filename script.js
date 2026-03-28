@@ -115,9 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
                         excludeChars: getVal('excludeChars').trim(),
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
-                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
-                        uniqueWordLengths: getChecked('uniqueWordLengths'),
-                        uniquePairOnly: getChecked('uniquePairOnly')
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
                     };
                 } else if (mode === 'wildcardShiritori') {
                     apiPath = '/api/wildcard_shiritori';
