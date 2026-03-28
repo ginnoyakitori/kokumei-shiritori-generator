@@ -188,7 +188,7 @@ function filterUniqueWordLengths(results) {
  * 例：ア→ド の組み合わせが複数ある場合、そのすべてを除外
  */
 function filterUniquePairOnly(results) {
-    // 各経路の「開始文字→終了文字」の組み合���せをカウント
+    // 各経路の「開始文字→終了文字」の組み合わせをカウント
     const pairCounts = {};
     
     results.forEach(path => {
