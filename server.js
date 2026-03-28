@@ -34,6 +34,8 @@ function getLastChar(word) {
 // === データとキャッシュ ===
 let wordLists = {};
 let wordMap = {}; 
+let wordsByLength = {}; // 文字数でインデックス化
+let wordsByFirstChar = {}; // 最初の文字でインデックス化
 const shiritoriCache = {};
 
 const LIST_FILES = ['kokumei.txt', 'shutomei.txt', 'kokumei_shutomei.txt', 'pokemon.txt', 'countries-only.txt', 'capitals-only.txt'];
@@ -97,10 +99,32 @@ function loadWordData() {
             wordLists[fileName] = words;
 
             allWordsCache[fileName] = words;
+            
+            // 文字数でインデックス化
+            wordsByLength[fileName] = {};
+            words.forEach(word => {
+                const len = word.length;
+                if (!wordsByLength[fileName][len]) {
+                    wordsByLength[fileName][len] = [];
+                }
+                wordsByLength[fileName][len].push(word);
+            });
+            
+            // 最初の文字でインデックス化（最後の文字→最初の文字でつなぐため）
+            wordsByFirstChar[fileName] = {};
+            words.forEach(word => {
+                const firstChar = normalizeWord(word);
+                if (!wordsByFirstChar[fileName][firstChar]) {
+                    wordsByFirstChar[fileName][firstChar] = [];
+                }
+                wordsByFirstChar[fileName][firstChar].push(word);
+            });
         } catch (e) {
             console.warn(`Warning: Could not load ${fileName}:`, e.message);
             wordLists[fileName] = [];
             allWordsCache[fileName] = [];
+            wordsByLength[fileName] = {};
+            wordsByFirstChar[fileName] = {};
         }
     });
 
@@ -109,7 +133,23 @@ function loadWordData() {
     wordLists[KOKUMEI_SHUTOMEI_KEY] = [...new Set(combined)].sort();
 
     allWordsCache[KOKUMEI_SHUTOMEI_KEY] = wordLists[KOKUMEI_SHUTOMEI_KEY];
-
+    
+    // 複合リスト用のインデックス化
+    wordsByLength[KOKUMEI_SHUTOMEI_KEY] = {};
+    wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY] = {};
+    wordLists[KOKUMEI_SHUTOMEI_KEY].forEach(word => {
+        const len = word.length;
+        if (!wordsByLength[KOKUMEI_SHUTOMEI_KEY][len]) {
+            wordsByLength[KOKUMEI_SHUTOMEI_KEY][len] = [];
+        }
+        wordsByLength[KOKUMEI_SHUTOMEI_KEY][len].push(word);
+        
+        const firstChar = normalizeWord(word);
+        if (!wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar]) {
+            wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar] = [];
+        }
+        wordsByFirstChar[KOKUMEI_SHUTOMEI_KEY][firstChar].push(word);
+    });
 
     Object.keys(wordLists).forEach(listName => {
 
@@ -132,7 +172,6 @@ function loadWordData() {
 }
 
 /**
-<<<<<<< HEAD
  * 単語の文字数がすべて異なる経路のみを抽出
  * 例：3単語の経路が [2,3,4] の組み合わせなら OK、[2,3,3] ならNG
  */
@@ -173,8 +212,6 @@ function filterUniquePairOnly(results) {
 }
 
 /**
-=======
->>>>>>> e42b71c4ecb4fafffe5ad59f80551b96e840882a
  * 必須文字のチェックを部分文字列の出現回数ベースで実行
  */
 function checkRequiredChars(path, requiredChars, requiredCharMode) {
@@ -264,9 +301,7 @@ function generateCartesianProduct(arr) {
 // === 探索関数 ===
 
 // 💡 最小ヒープを模したシンプルな優先度付きキュー (ダイクストラ法用)
-// [totalLength, word, path] の配列を管理
 class PriorityQueue {
-    // 比較関数: totalLength (a[0]) が小さい方を優先
     constructor(comparator = (a, b) => a[0] < b[0]) {
         this._heap = [];
         this._comparator = comparator;
@@ -277,12 +312,10 @@ class PriorityQueue {
     isEmpty() {
         return this.size() === 0;
     }
-    // キューの末尾に追加し、バブルアップして順序を維持
     push(value) {
         this._heap.push(value);
         this._bubbleUp(this._heap.length - 1);
     }
-    // 最小要素を取り出し、バブルダウンして順序を維持
     pop() {
         if (this.isEmpty()) return undefined;
         const top = this._heap[0];
@@ -332,7 +365,7 @@ class PriorityQueue {
 /**
  * 💡 最短「文字数」で到達するすべてのパスを探索 (ダイクストラ法)
  */
-function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode) {
+function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode, listName) {
     const allWords = Object.values(wordMap).flat(); 
     let startingWords = firstChar ? (wordMap[firstChar] || []) : allWords;
     
@@ -340,19 +373,18 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
     
     // noPrecedingWord フィルタリング
     if (noPrecedingWord) {
+        const firstCharSet = new Set(startingWords.map(normalizeWord));
         startingWords = startingWords.filter(word => {
             const firstCharOfWord = normalizeWord(word);
             return !allWords.some(prevWord => prevWord !== word && getShiritoriLastChar(prevWord) === firstCharOfWord);
         });
     }
     
-    // 💡 PriorityQueue: [合計文字数, 最後の単語, パスの配列]
     const pq = new PriorityQueue(); 
-    
-    // Key: word, Value: minLength (その単語に到達したときの最小文字数)
     const minPathLength = {}; 
-    let shortestLength = Infinity; // 最短の文字数を追跡
+    let shortestLength = Infinity;
     let shortestPaths = [];
+    const seenPaths = new Set(); // 重複チェック用
 
     // 1. 初期キュー投入
     for (const word of startingWords) {
@@ -367,12 +399,12 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
     while (pq.size() > 0) {
         const [currentLength, currentWord, path] = pq.pop();
         
-        // 🚨 既にこの単語に、より短い文字数で到達しているか確認
+        // 既にこの単語に、より短い文字数で到達しているか確認
         if (currentLength > minPathLength[currentWord]) {
             continue;
         }
 
-        // 確定した最短文字数を超えているか確認 (最短文字数を見つけたらそれ以上の探索は行わない)
+        // 確定した最短文字数を超えているか確認
         if (currentLength > shortestLength) {
              continue;
         }
@@ -384,12 +416,9 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
         const isEndWordCondition = (!lastCharOfCurrent || lastCharOfCurrent === 'ン' || (lastChar !== null && lastCharOfCurrent === lastChar));
 
         if (isEndWordCondition) {
-             // 終端文字がンでも、それがゴール条件を満たしていれば、ここでチェックが必要
              if (lastChar === null || lastChar === lastCharOfCurrent) {
-                  // ゴール条件チェック (文字数とフィルタリング)
                   let isNoSucceeding = true;
                   if (noSucceedingWord) {
-                       // currentWord以外に、lastCharOfCurrentで始まる単語が存在しないか確認
                        isNoSucceeding = !allWords.some(word => word !== currentWord && normalizeWord(word) === lastCharOfCurrent);
                   }
                     
@@ -397,60 +426,60 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                       checkRequiredChars(path, requiredChars, requiredCharMode) && 
                       checkExcludeChars(path, excludeChars)) {
                       
-                      if (currentLength < shortestLength) {
-                          shortestLength = currentLength;
-                          shortestPaths = [path];
-                      } else if (currentLength === shortestLength) {
-                          shortestPaths.push(path);
+                      const pathKey = path.join(',');
+                      if (!seenPaths.has(pathKey)) {
+                          seenPaths.add(pathKey);
+                          
+                          if (currentLength < shortestLength) {
+                              shortestLength = currentLength;
+                              shortestPaths = [path];
+                          } else if (currentLength === shortestLength) {
+                              shortestPaths.push(path);
+                          }
                       }
                   }
              }
 
-             // 終端文字がン、またはゴールに到達した場合、ここから次の探索は行わない
              if (lastCharOfCurrent === 'ン' || currentLength === shortestLength) continue;
         }
 
-
-        const nextWords = wordMap[lastCharOfCurrent] || [];
+        // wordsByFirstChar を使った高速なNext単語取得
+        const nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
 
         for (const nextWord of nextWords) {
             if (!usedWords.has(nextWord)) {
                 const nextLength = currentLength + nextWord.length;
                 
-                // 次のパス長が確定した最短長を超えていれ��スキップ
                 if (nextLength > shortestLength) continue;
 
                 const newPath = [...path, nextWord];
                 const nextLastChar = getShiritoriLastChar(nextWord);
 
-                // 3. ゴール条件チェック
                 if (lastChar === null || nextLastChar === lastChar) {
                     
-                    // noSucceedingWordのチェック (最終単語の場合のみ)
                     let isNoSucceeding = true;
                     if (noSucceedingWord) {
-                         // nextWord以外に、nextLastCharで始まる単語が存在しないか確認
                          isNoSucceeding = !allWords.some(word => word !== nextWord && normalizeWord(word) === nextLastChar);
                     }
                     
                     if (isNoSucceeding) {
-                        // 必須文字/除外文字のチェック
                         if (checkRequiredChars(newPath, requiredChars, requiredCharMode) && checkExcludeChars(newPath, excludeChars)) {
                             
-                            if (nextLength < shortestLength) {
-                                // 新しい最短パスを発見
-                                shortestLength = nextLength;
-                                shortestPaths = [newPath];
-                            } else if (nextLength === shortestLength) {
-                                // 同じ最短長のパスを追加
-                                shortestPaths.push(newPath);
+                            const pathKey = newPath.join(',');
+                            if (!seenPaths.has(pathKey)) {
+                                seenPaths.add(pathKey);
+                                
+                                if (nextLength < shortestLength) {
+                                    shortestLength = nextLength;
+                                    shortestPaths = [newPath];
+                                } else if (nextLength === shortestLength) {
+                                    shortestPaths.push(newPath);
+                                }
                             }
                         }
                     }
                 }
 
-                // 4. 次の探索のためにキューに追加
-                // 既にこの単語に、より短い文字数で到達していなければ更新
                 if (!minPathLength[nextWord] || nextLength < minPathLength[nextWord]) {
                     minPathLength[nextWord] = nextLength; 
                     pq.push([nextLength, nextWord, newPath]); 
@@ -459,25 +488,12 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
         }
     }
     
-    // 🚨 重複排除のロジックをここに追加 🚨
-    const uniquePaths = [];
-    const seenPaths = new Set();
-    
-    shortestPaths.forEach(path => {
-        const pathKey = path.join(',');
-        if (!seenPaths.has(pathKey)) {
-            seenPaths.add(pathKey);
-            uniquePaths.push(path);
-        }
-    });
-    
-    // ソートして返却
-    return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
+    return shortestPaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
 
 // 💡 修正: requiredCharModeを引数に追加
-function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode) {
+function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode, listName) {
     const allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     const allWords = Object.values(wordMap).flat(); 
@@ -488,7 +504,8 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
             const endChar = getShiritoriLastChar(lastWord);
             
             if (noSucceedingWord) {
-                const hasNextWord = (wordMap[endChar] || []).some(word => !usedWords.has(word));
+                const nextWordList = wordsByFirstChar[listName][endChar] || [];
+                const hasNextWord = nextWordList.some(word => !usedWords.has(word));
                 if (hasNextWord) {
                     return; 
                 }
@@ -505,7 +522,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
         const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
         if (!lastCharOfCurrent) return;
         
-        const nextWords = wordMap[lastCharOfCurrent] || [];
+        const nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
 
         for (const word of nextWords) {
             if (!usedWords.has(word)) {
@@ -537,7 +554,8 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
              
              let isNoSucceeding = true;
              if (noSucceedingWord) {
-               isNoSucceeding = !(wordMap[endChar] || []).some(nextWord => nextWord !== word);
+               const nextWordList = wordsByFirstChar[listName][endChar] || [];
+               isNoSucceeding = !nextWordList.some(nextWord => nextWord !== word);
              }
              
              let isNoPreceding = true;
@@ -565,7 +583,7 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
 
 
 // 💡 修正: requiredCharModeを引数に追加
-function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode) {
+function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode, listName) {
     let allResults = [];
     const collator = new Intl.Collator('ja', { sensitivity: 'base' });
     
@@ -601,9 +619,10 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
             } else {
                 const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
                 if (!lastCharOfCurrent) return;
-                nextWords = wordMap[lastCharOfCurrent] || [];
+                nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
             }
 
+            // 文字数でフィルタリング（つながっている単語のみ）
             for (const word of nextWords) {
                 if (!usedWords.has(word) && word.length === requiredLength) {
                     path.push(word);
@@ -635,14 +654,13 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
 // 1. 正規表現作成関数の微調整
 function patternToRegex(pattern) {
     if (!pattern || pattern.trim() === '') return null;
-    // 特殊文字をエスケープしつつ、？と?を . に変換
     let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
     regexString = regexString.replace(/[?？]/g, '.'); 
     return new RegExp('^' + regexString + '$');
 }
 
 // 2. 探索メインロジックの修正
-function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars, requiredCharMode) {
+function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars, requiredCharMode, listName) {
 
     const results=[];
     const collator=new Intl.Collator('ja',{sensitivity:'base'});
@@ -725,11 +743,13 @@ function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars,
 // === Express エンドポイント ===
 
 // サーバー起動時にデータをロード
+console.log('Loading word data...');
 loadWordData();
+console.log('Word data loaded successfully!');
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -750,15 +770,14 @@ app.post('/api/shiritori', (req, res) => {
 
     const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
-
     if (excludeChars && excludeChars.trim() !== '') {
         excludeChars = excludeChars.split('');
     } else {
         excludeChars = null;
     }
 
-
     let results = [];
+    const startTime = Date.now();
     
     // 💡 最短モードの処理
     if (wordCount === 'shortest') {
@@ -766,8 +785,19 @@ app.post('/api/shiritori', (req, res) => {
             return res.status(400).json({ error: '件数カウントは最短モードでは現在サポートされていません。' });
         }
         try {
-            // 🚨 文字数最短を検索するダイクストラ法ベースの関数を呼び出し 🚨
-            results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+            results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode, listName);
+            
+            if (uniqueWordLengths) {
+                results = filterUniqueWordLengths(results);
+            }
+            
+            if (uniquePairOnly) {
+                results = filterUniquePairOnly(results);
+            }
+            
+            const elapsed = Date.now() - startTime;
+            console.log(`Shiritori search completed in ${elapsed}ms (${results.length} results)`);
+            
             return res.json({ results });
         } catch (e) {
             console.error("Error in shortest path (Dijkstra) shiritori:", e);
@@ -781,7 +811,15 @@ app.post('/api/shiritori', (req, res) => {
             return res.status(400).json({ error: '件数カウントは単語数指定モードでは現在サポートされていません。' });
         }
         
-        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode, listName);
+        
+        if (uniqueWordLengths) {
+            results = filterUniqueWordLengths(results);
+        }
+        
+        if (uniquePairOnly) {
+            results = filterUniquePairOnly(results);
+        }
         
         const counts = {};
         results.forEach(path => {
@@ -803,6 +841,8 @@ app.post('/api/shiritori', (req, res) => {
                 return obj;
             }, {});
 
+        const elapsed = Date.now() - startTime;
+        console.log(`Shiritori count search completed in ${elapsed}ms`);
         
         if (outputType === 'firstCharCount') {
             return res.json({ firstCharCounts: sortedCounts });
@@ -815,7 +855,19 @@ app.post('/api/shiritori', (req, res) => {
             return res.status(400).json({ error: '単語数指定の検索は現在実装されていません。' });
         }
         
-        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode, listName);
+        
+        if (uniqueWordLengths) {
+            results = filterUniqueWordLengths(results);
+        }
+        
+        if (uniquePairOnly) {
+            results = filterUniquePairOnly(results);
+        }
+        
+        const elapsed = Date.now() - startTime;
+        console.log(`Shiritori path search completed in ${elapsed}ms (${results.length} results)`);
+        
         return res.json({ results });
     }
 });
@@ -841,9 +893,13 @@ app.post('/api/word_count_shiritori', (req, res) => {
 
     const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
+    const startTime = Date.now();
 
     try {
-        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode);
+        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode, listName);
+        const elapsed = Date.now() - startTime;
+        console.log(`Word count shiritori search completed in ${elapsed}ms (${results.length} results)`);
+        
         return res.json({ results });
     } catch (e) {
         console.error("Error in word count shiritori:", e);
@@ -889,7 +945,6 @@ app.post('/api/wildcard_shiritori', (req, res) => {
         return res.status(400).json({ error: '無効なリストです。' });
     }
 
-    // 💡 互換性ロジック：フロントエンドから配列が送られてこなかった場合、従来のデータから配列を作る
     if (!wordPatterns) {
         if (isNaN(wordCount) || wordCount < 1) {
             return res.status(400).json({ error: '無効な単語数です。' });
@@ -900,7 +955,6 @@ app.post('/api/wildcard_shiritori', (req, res) => {
         else if (lastWordPattern && wordCount === 1) wordPatterns[0] = lastWordPattern;
     }
 
-    // パターンの配列が空の場合はエラー
     if (!Array.isArray(wordPatterns) || wordPatterns.length < 1) {
         return res.status(400).json({ error: '無効な入力です。' });
     }
@@ -911,17 +965,15 @@ app.post('/api/wildcard_shiritori', (req, res) => {
 
     const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
-    const results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode);
+    const results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode, listName);
     
     return res.json({ results });
 });
-/**
- * 💡 ループしりとり探索ロジック
- */
+
 /**
  * 💡 ループしりとり探索ロジック（回転一致対応版）
  */
-function findLoopShiritori(wordMap, pattern) {
+function findLoopShiritori(wordMap, pattern, listName) {
     const L = pattern.length;
     const regex = patternToRegex(pattern);
     const results = [];
@@ -932,15 +984,11 @@ function findLoopShiritori(wordMap, pattern) {
     const candidateWords = allWords.filter(w => w.length < L);
 
     function backtrack(path, currentStr) {
-        // 現在の文字列長が目標に達したかチェック
         if (currentStr.length === L) {
             const firstWord = path[0];
             const lastWord = path[path.length - 1];
             
-            // 1. ループ構造（最後と最初が繋がるか）を確認
             if (getShiritoriLastChar(lastWord) === normalizeWord(firstWord)) {
-                // 2. 回転一致のチェック
-                // 文字列を1文字ずつずらして、どれかがパターンに合うかチェック
                 for (let i = 0; i < L; i++) {
                     const rotatedStr = currentStr.slice(i) + currentStr.slice(0, i);
                     if (regex.test(rotatedStr)) {
@@ -955,7 +1003,7 @@ function findLoopShiritori(wordMap, pattern) {
         if (currentStr.length > L) return;
 
         const lastChar = getShiritoriLastChar(path[path.length - 1]);
-        const nextWords = wordMap[lastChar] || [];
+        const nextWords = wordsByFirstChar[listName][lastChar] || [];
         for (const nextWord of nextWords) {
             if (!path.includes(nextWord)) {
                 backtrack([...path, nextWord], currentStr + nextWord);
@@ -963,12 +1011,10 @@ function findLoopShiritori(wordMap, pattern) {
         }
     }
 
-    // すべての単語を開始地点として試行
     for (const startWord of candidateWords) {
         backtrack([startWord], startWord);
     }
 
-    // 重複排除（同じ単語の組み合わせによる輪を1つにまとめる）
     const uniquePaths = [];
     const seenLoops = new Set();
 
@@ -992,8 +1038,13 @@ app.post('/api/loop_shiritori', (req, res) => {
         return res.status(400).json({ error: 'リスト名またはパターンが指定されていません。' });
     }
 
+    const startTime = Date.now();
+
     try {
-        const results = findLoopShiritori(map, pattern);
+        const results = findLoopShiritori(map, pattern, listName);
+        const elapsed = Date.now() - startTime;
+        console.log(`Loop shiritori search completed in ${elapsed}ms (${results.length} results)`);
+        
         res.json({ results });
     } catch (e) {
         console.error(e);

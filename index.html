@@ -79,12 +79,22 @@
                 <div class="radio-group">
                     <input type="radio" id="outputPath" name="outputType" value="path" checked>
                     <label for="outputPath">経路表示（すべて表示）</label>
-                    <br>
                     <input type="radio" id="outputFirstCount" name="outputType" value="firstCharCount">
                     <label for="outputFirstCount">開始文字別集計</label>
-                    <br>
                     <input type="radio" id="outputLastCount" name="outputType" value="lastCharCount">
                     <label for="outputLastCount">終了文字別集計</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="uniqueWordLengths">
+                    <label for="uniqueWordLengths">単語の文字数がすべて異なる経路のみ表示</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="uniquePairOnly">
+                    <label for="uniquePairOnly">最初と最後の文字の組み合わせが唯一の経路のみ表示</label>
                 </div>
             </div>
             <button class="search-btn primary">しりとり経路を検索</button>
