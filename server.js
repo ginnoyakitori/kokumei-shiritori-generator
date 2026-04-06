@@ -663,11 +663,17 @@ function findShiritoriByWordCountPatterns(wordMap, wordCountPatterns, requiredCh
     return finalResults.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
-// 1. 正規表現作成関数の微調整
+// 1. 正規表現作成関数の修正
 function patternToRegex(pattern) {
     if (!pattern || pattern.trim() === '') return null;
-    let regexString = pattern.replace(/[.*+^${}()|[\]\\]/g, '\\$&'); 
-    regexString = regexString.replace(/[?？]/g, '.'); 
+    // ?と？を.に置き換える
+    let regexString = pattern.replace(/[?？]/g, '.');
+    // その他の特殊文字をエスケープ
+    regexString = regexString.replace(/[.*+^${}()|[\]\\]/g, (match) => {
+        // すでに.になっているものはそのまま
+        if (match === '.') return match;
+        return '\\' + match;
+    });
     return new RegExp('^' + regexString + '$');
 }
 
@@ -839,7 +845,7 @@ app.post('/api/shiritori', (req, res) => {
             results = filterUniquePairOnly(results);
         }
         
-        // 合計文字数でフィルタリング
+        // 合計文字数でフィ���タリング
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
@@ -1094,6 +1100,7 @@ app.post('/api/loop_shiritori', (req, res) => {
         res.status(500).json({ error: '探索中にエラーが発生しました。' });
     }
 });
+
 /**
  * チェーン検索
  * パターンと必須文字で条件を指定して、しりとり経路を探す
@@ -1113,7 +1120,9 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
     const patternLength = pattern.length;
 
     // DFS で経路を探索
-    function backtrack(path, currentStr, currentLength) {
+    function backtrack(path, currentStr) {
+        const currentLength = currentStr.length;
+
         // パターンの長さに達したかチェック
         if (currentLength === patternLength) {
             // パターンマッチングをチェック
@@ -1131,6 +1140,11 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
             }
 
             results.push([...path]);
+            return;
+        }
+
+        // パターン長を超えたらスキップ
+        if (currentLength > patternLength) {
             return;
         }
 
@@ -1152,9 +1166,7 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
                 continue;
             }
 
-            path.push(nextWord);
-            backtrack(path, nextStr, nextLength);
-            path.pop();
+            backtrack([...path, nextWord], nextStr);
         }
     }
 
@@ -1163,15 +1175,9 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
         const startStr = startWord;
         const startLength = startWord.length;
 
-        // 開始単語がパターン長以下で、かつパターンの最初の部分に合致するか確認
+        // 開始単語がパターン長以下か確認
         if (startLength <= patternLength) {
-            // 部分パターン（最初のN文字）をチェック
-            const partialPattern = pattern.slice(0, startLength).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&');
-            const partialRegex = new RegExp('^' + partialPattern + '$');
-            
-            if (partialRegex.test(startStr)) {
-                backtrack([startWord], startStr, startLength);
-            }
+            backtrack([startWord], startStr);
         }
     }
 
@@ -1189,6 +1195,7 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
 
     return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
+
 app.post('/api/chain_shiritori', (req, res) => {
     let { listName, pattern, requiredChars, excludeChars, requiredCharMode } = req.body;
     const map = wordMap[listName];
@@ -1223,22 +1230,11 @@ app.post('/api/chain_shiritori', (req, res) => {
             listName
         );
 
-        const resultConditions = {
-            pattern: pattern,
-            requiredChars: requiredChars ? requiredChars.join(', ') : '（なし）',
-            excludeChars: excludeChars ? excludeChars.join(', ') : '（なし）'
-        };
-
-        if (requiredCharMode === 'exactly') {
-            resultConditions.requiredCharMode = 'ちょうど指定回数';
-        }
-
         const elapsed = Date.now() - startTime;
         console.log(`Chain shiritori search completed in ${elapsed}ms (${results.length} results)`);
 
         res.json({ 
-            results,
-            conditions: resultConditions
+            results
         });
     } catch (e) {
         console.error("Error in chain shiritori:", e);
@@ -1342,7 +1338,7 @@ app.post('/api/auto_generate', (req, res) => {
         });
     } catch (e) {
         console.error("Error in auto generate:", e);
-        return res.status(500).json({ error: 'サーバー内部��エラーが発生しました。' });
+        return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
     }
 });
 
