@@ -296,46 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // チェーン検索の結果表示
         if (mode === 'chain') {
-            if (data.conditions) {
-                const conditionsDiv = document.createElement('div');
-                conditionsDiv.style.padding = '15px';
-                conditionsDiv.style.backgroundColor = '#f3e5f5';
-                conditionsDiv.style.borderRadius = '5px';
-                conditionsDiv.style.marginBottom = '20px';
-                conditionsDiv.style.border = '1px solid #ce93d8';
-
-                const conditionsTitle = document.createElement('p');
-                conditionsTitle.style.fontWeight = 'bold';
-                conditionsTitle.style.fontSize = '1.1em';
-                conditionsTitle.style.marginTop = '0';
-                conditionsTitle.textContent = '検索条件:';
-                conditionsDiv.appendChild(conditionsTitle);
-
-                const conditionsList = document.createElement('ul');
-                conditionsList.style.margin = '10px 0';
-                Object.entries(data.conditions).forEach(([key, value]) => {
-                    const li = document.createElement('li');
-                    if (key === 'pattern') {
-                        li.textContent = `パターン: ${value}`;
-                    } else if (key === 'requiredChars') {
-                        li.textContent = `必須文字: ${value}`;
-                    } else if (key === 'excludeChars') {
-                        li.textContent = `除外文字: ${value}`;
-                    } else if (key === 'requiredCharMode') {
-                        li.textContent = `必須文字モード: ${value}`;
-                    } else {
-                        li.textContent = `${key}: ${value}`;
-                    }
-                    conditionsList.appendChild(li);
-                });
-                conditionsDiv.appendChild(conditionsList);
-
-                resultsDiv.appendChild(conditionsDiv);
-            }
-
             const results = data.results || [];
             if (results.length === 0) {
-                resultsDiv.innerHTML += '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
+                resultsDiv.innerHTML = '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
                 return;
             }
 
