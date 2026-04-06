@@ -1093,6 +1093,107 @@ app.post('/api/loop_shiritori', (req, res) => {
         res.status(500).json({ error: '探索中にエラーが発生しました。' });
     }
 });
+
+/**
+ * 自動生成モード
+ * 固定条件（開始文字、終了文字、単語数）で、指定した上限数以下となるように
+ * 合計文字数や文字数一意性などの条件を自動調整
+ */
+app.post('/api/auto_generate', (req, res) => {
+    let { listName, firstChar, lastChar, wordCount, maxSolutions, searchTotalLength, searchUniqueWordLengths } = req.body;
+    const map = wordMap[listName];
+
+    if (!map) {
+        return res.status(400).json({ error: '無効な単語リストです。' });
+    }
+
+    if (!wordCount || wordCount < 1) {
+        return res.status(400).json({ error: '単語数は1以上の数字である必要があります。' });
+    }
+
+    if (!maxSolutions || maxSolutions < 1) {
+        return res.status(400).json({ error: '解の上限数は1以上の数字である必要があります。' });
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // 1. まずは条件なしで全検索を実行
+        let baseResults = findShiritoriCombinations(
+            map, 
+            firstChar || null, 
+            lastChar || null, 
+            wordCount, 
+            null, 
+            null, 
+            false, 
+            false, 
+            'atLeast', 
+            listName
+        );
+
+        const resultConditions = {
+            firstChar: firstChar || '（指定なし）',
+            lastChar: lastChar || '（指定なし）',
+            wordCount: wordCount
+        };
+
+        let finalResults = baseResults;
+
+        // 2. 合計文字数で絞り込む
+        if (searchTotalLength && finalResults.length > maxSolutions) {
+            // 合計文字数別に経路をグループ化
+            const byLength = {};
+            finalResults.forEach(path => {
+                const totalLen = path.join('').length;
+                if (!byLength[totalLen]) {
+                    byLength[totalLen] = [];
+                }
+                byLength[totalLen].push(path);
+            });
+
+            // 合計文字数が少ない順に、解の上限数以下になるまで絞り込む
+            const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
+            finalResults = [];
+            for (const len of sortedLengths) {
+                if (finalResults.length >= maxSolutions) break;
+                const remaining = maxSolutions - finalResults.length;
+                finalResults = finalResults.concat(byLength[len].slice(0, remaining));
+            }
+
+            // グループ化に成功したら、使用した文字数を記録
+            if (finalResults.length > 0) {
+                resultConditions.totalLength = finalResults[0].join('').length;
+            }
+        }
+
+        // 3. 文字数一意性で絞り込む
+        if (searchUniqueWordLengths && finalResults.length > maxSolutions) {
+            const uniqueLengthResults = filterUniqueWordLengths(finalResults);
+            if (uniqueLengthResults.length > 0 && uniqueLengthResults.length <= maxSolutions) {
+                finalResults = uniqueLengthResults;
+                resultConditions.uniqueWordLengths = true;
+            }
+        }
+
+        // 4. 上限を超えていても最大maxSolutions件まで返す
+        if (finalResults.length > maxSolutions) {
+            finalResults = finalResults.slice(0, maxSolutions);
+        }
+
+        const elapsed = Date.now() - startTime;
+        console.log(`Auto generate completed in ${elapsed}ms (${finalResults.length} results)`);
+
+        return res.json({ 
+            results: finalResults,
+            conditions: resultConditions
+        });
+    } catch (e) {
+        console.error("Error in auto generate:", e);
+        return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
+    }
+});
+
 // サーバー起動
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);

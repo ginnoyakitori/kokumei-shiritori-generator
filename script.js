@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
         wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
         loop: document.getElementById('loopMode'),
+        autoGenerate: document.getElementById('autoGenerateMode'),
         wildcard: document.getElementById('wildcardMode'),
         substring: document.getElementById('substringMode')
     };
@@ -162,6 +163,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null
                     };
 
+                } else if (mode === 'autoGenerate') {
+                    apiPath = '/api/auto_generate';
+                    const firstCharVal = getVal('autoFirstChar').trim() || null;
+                    const lastCharVal = getVal('autoLastChar').trim() || null;
+                    const wordCountVal = parseInt(getVal('autoWordCount'), 10);
+                    const maxSolutionsVal = parseInt(getVal('autoMaxSolutions'), 10);
+                    const searchTotalLengthVal = getChecked('autoSearchTotalLength');
+                    const searchUniqueLengthsVal = getChecked('autoSearchUniqueWordLengths');
+
+                    requestBody = {
+                        listName: commonListName,
+                        firstChar: firstCharVal,
+                        lastChar: lastCharVal,
+                        wordCount: wordCountVal,
+                        maxSolutions: maxSolutionsVal,
+                        searchTotalLength: searchTotalLengthVal,
+                        searchUniqueWordLengths: searchUniqueLengthsVal
+                    };
+
                 } else if (mode === 'wildcard') {
                     apiPath = '/api/wildcard_search';
                     requestBody = { listName: commonListName, searchText: getVal('wildcardText').trim() };
@@ -194,6 +214,63 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsDiv.innerHTML = '';
         if (data.error) {
             resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
+            return;
+        }
+
+        // 自動生成モードの結果表示
+        if (mode === 'autoGenerate') {
+            if (data.conditions) {
+                const conditionsDiv = document.createElement('div');
+                conditionsDiv.style.padding = '15px';
+                conditionsDiv.style.backgroundColor = '#e3f2fd';
+                conditionsDiv.style.borderRadius = '5px';
+                conditionsDiv.style.marginBottom = '20px';
+                conditionsDiv.style.border = '1px solid #90caf9';
+
+                const conditionsTitle = document.createElement('p');
+                conditionsTitle.style.fontWeight = 'bold';
+                conditionsTitle.style.fontSize = '1.1em';
+                conditionsTitle.style.marginTop = '0';
+                conditionsTitle.textContent = '条件:';
+                conditionsDiv.appendChild(conditionsTitle);
+
+                const conditionsList = document.createElement('ul');
+                conditionsList.style.margin = '10px 0';
+                Object.entries(data.conditions).forEach(([key, value]) => {
+                    const li = document.createElement('li');
+                    if (key === 'totalLength') {
+                        li.textContent = `合計文字数: ${value}`;
+                    } else if (key === 'uniqueWordLengths') {
+                        li.textContent = `文字数の一意性: ${value ? 'あり' : 'なし'}`;
+                    } else {
+                        li.textContent = `${key}: ${value}`;
+                    }
+                    conditionsList.appendChild(li);
+                });
+                conditionsDiv.appendChild(conditionsList);
+
+                resultsDiv.appendChild(conditionsDiv);
+            }
+
+            const results = data.results || [];
+            if (results.length === 0) {
+                resultsDiv.innerHTML += '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
+                return;
+            }
+
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = `${results.length} 件の結果を表示します:`;
+            resultsDiv.appendChild(summary);
+
+            const ul = document.createElement('ul');
+            ul.className = 'result-list';
+            results.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+                ul.appendChild(li);
+            });
+            resultsDiv.appendChild(ul);
             return;
         }
 
