@@ -1094,7 +1094,6 @@ app.post('/api/loop_shiritori', (req, res) => {
         res.status(500).json({ error: '探索中にエラーが発生しました。' });
     }
 });
-
 /**
  * チェーン検索
  * パターンと必須文字で条件を指定して、しりとり経路を探す
@@ -1112,13 +1111,6 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
     }
 
     const patternLength = pattern.length;
-
-    // パターンに合致する単語をすべて取得
-    const patternMatches = allWords.filter(word => regex.test(word));
-
-    if (patternMatches.length === 0) {
-        return [];
-    }
 
     // DFS で経路を探索
     function backtrack(path, currentStr, currentLength) {
@@ -1160,25 +1152,26 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
                 continue;
             }
 
-            // 部分的にパターンに合致するかチェック
-            // 正規表現は最後までマッチする必要があるので、ここでは部分チェック
-            const nextRegex = new RegExp('^' + pattern.slice(0, nextLength).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&') + '$');
-            if (!nextRegex.test(nextStr)) {
-                continue;
-            }
-
             path.push(nextWord);
             backtrack(path, nextStr, nextLength);
             path.pop();
         }
     }
 
-    // パターンに合致する単語から開始
-    for (const startWord of patternMatches) {
-        // 開始単語のパターンマッチをチェック
-        const startRegex = new RegExp('^' + pattern.slice(0, startWord.length).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&') + '$');
-        if (startRegex.test(startWord)) {
-            backtrack([startWord], startWord, startWord.length);
+    // 全単語から開始
+    for (const startWord of allWords) {
+        const startStr = startWord;
+        const startLength = startWord.length;
+
+        // 開始単語がパターン長以下で、かつパターンの最初の部分に合致するか確認
+        if (startLength <= patternLength) {
+            // 部分パターン（最初のN文字）をチェック
+            const partialPattern = pattern.slice(0, startLength).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&');
+            const partialRegex = new RegExp('^' + partialPattern + '$');
+            
+            if (partialRegex.test(startStr)) {
+                backtrack([startWord], startStr, startLength);
+            }
         }
     }
 
@@ -1196,7 +1189,6 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
 
     return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
-
 app.post('/api/chain_shiritori', (req, res) => {
     let { listName, pattern, requiredChars, excludeChars, requiredCharMode } = req.body;
     const map = wordMap[listName];
