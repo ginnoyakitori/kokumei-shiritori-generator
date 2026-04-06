@@ -752,6 +752,7 @@ function findWildcardShiritoriCombinations(wordMap, wordPatterns, requiredChars,
     return unique.sort((a,b)=>collator.compare(a.join(''),b.join('')));
 
 }
+
 // === Express エンドポイント ===
 
 // サーバー起動時にデータをロード
@@ -1065,7 +1066,7 @@ function findLoopShiritori(wordMap, pattern, listName) {
     return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
-// 🚨 【追加】フロントエンドからのリクエストを受けるエンドポイント
+// フロントエンドからのリクエストを受けるエンドポイント
 app.post('/api/loop_shiritori', (req, res) => {
     const { listName, pattern, totalLength } = req.body;
     const map = wordMap[listName];
@@ -1090,6 +1091,165 @@ app.post('/api/loop_shiritori', (req, res) => {
         res.json({ results });
     } catch (e) {
         console.error(e);
+        res.status(500).json({ error: '探索中にエラーが発生しました。' });
+    }
+});
+
+/**
+ * チェーン検索
+ * パターンと必須文字で条件を指定して、しりとり経路を探す
+ * 輪にしない直線的な経路
+ */
+function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requiredCharMode, listName) {
+    const results = [];
+    const allWords = Object.values(wordMap).flat();
+    const collator = new Intl.Collator('ja', { sensitivity: 'base' });
+
+    // パターンの正規表現化と長さを取得
+    const regex = patternToRegex(pattern);
+    if (!regex) {
+        return [];
+    }
+
+    const patternLength = pattern.length;
+
+    // パターンに合致する単語をすべて取得
+    const patternMatches = allWords.filter(word => regex.test(word));
+
+    if (patternMatches.length === 0) {
+        return [];
+    }
+
+    // DFS で経路を探索
+    function backtrack(path, currentStr, currentLength) {
+        // パターンの長さに達したかチェック
+        if (currentLength === patternLength) {
+            // パターンマッチングをチェック
+            if (!regex.test(currentStr)) {
+                return;
+            }
+
+            // 必須文字・除外文字をチェック
+            if (!checkRequiredChars(path, requiredChars, requiredCharMode)) {
+                return;
+            }
+
+            if (!checkExcludeChars(path, excludeChars)) {
+                return;
+            }
+
+            results.push([...path]);
+            return;
+        }
+
+        // 次の単語を取得
+        const lastCharOfCurrent = getShiritoriLastChar(path[path.length - 1]);
+        const nextWords = wordsByFirstChar[listName][lastCharOfCurrent] || [];
+        
+        for (const nextWord of nextWords) {
+            // 既に使った単語は避ける
+            if (path.includes(nextWord)) {
+                continue;
+            }
+
+            const nextStr = currentStr + nextWord;
+            const nextLength = nextStr.length;
+
+            // パターン長を超えたらスキップ
+            if (nextLength > patternLength) {
+                continue;
+            }
+
+            // 部分的にパターンに合致するかチェック
+            // 正規表現は最後までマッチする必要があるので、ここでは部分チェック
+            const nextRegex = new RegExp('^' + pattern.slice(0, nextLength).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&') + '$');
+            if (!nextRegex.test(nextStr)) {
+                continue;
+            }
+
+            path.push(nextWord);
+            backtrack(path, nextStr, nextLength);
+            path.pop();
+        }
+    }
+
+    // パターンに合致する単語から開始
+    for (const startWord of patternMatches) {
+        // 開始単語のパターンマッチをチェック
+        const startRegex = new RegExp('^' + pattern.slice(0, startWord.length).replace(/[?？]/g, '.').replace(/[.*+^${}()|[\]\\]/g, '\\$&') + '$');
+        if (startRegex.test(startWord)) {
+            backtrack([startWord], startWord, startWord.length);
+        }
+    }
+
+    // 重複排除
+    const uniquePaths = [];
+    const seenPaths = new Set();
+
+    results.forEach(path => {
+        const pathKey = path.join(',');
+        if (!seenPaths.has(pathKey)) {
+            seenPaths.add(pathKey);
+            uniquePaths.push(path);
+        }
+    });
+
+    return uniquePaths.sort((a, b) => collator.compare(a.join(''), b.join('')));
+}
+
+app.post('/api/chain_shiritori', (req, res) => {
+    let { listName, pattern, requiredChars, excludeChars, requiredCharMode } = req.body;
+    const map = wordMap[listName];
+
+    if (!map) {
+        return res.status(400).json({ error: '無効な単語リストです。' });
+    }
+
+    if (!pattern || pattern.trim() === '') {
+        return res.status(400).json({ error: 'パターンは必須です。' });
+    }
+
+    if (requiredChars && requiredChars.length === 0) {
+        requiredChars = null;
+    }
+
+    if (excludeChars && excludeChars.length === 0) {
+        excludeChars = null;
+    }
+
+    const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
+
+    const startTime = Date.now();
+
+    try {
+        const results = findChainShiritori(
+            map, 
+            pattern, 
+            requiredChars, 
+            excludeChars, 
+            mode, 
+            listName
+        );
+
+        const resultConditions = {
+            pattern: pattern,
+            requiredChars: requiredChars ? requiredChars.join(', ') : '（なし）',
+            excludeChars: excludeChars ? excludeChars.join(', ') : '（なし）'
+        };
+
+        if (requiredCharMode === 'exactly') {
+            resultConditions.requiredCharMode = 'ちょうど指定回数';
+        }
+
+        const elapsed = Date.now() - startTime;
+        console.log(`Chain shiritori search completed in ${elapsed}ms (${results.length} results)`);
+
+        res.json({ 
+            results,
+            conditions: resultConditions
+        });
+    } catch (e) {
+        console.error("Error in chain shiritori:", e);
         res.status(500).json({ error: '探索中にエラーが発生しました。' });
     }
 });
@@ -1190,7 +1350,7 @@ app.post('/api/auto_generate', (req, res) => {
         });
     } catch (e) {
         console.error("Error in auto generate:", e);
-        return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
+        return res.status(500).json({ error: 'サーバー内部��エラーが発生しました。' });
     }
 });
 

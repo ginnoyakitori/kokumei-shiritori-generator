@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
         wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
         loop: document.getElementById('loopMode'),
+        chain: document.getElementById('chainMode'),
         autoGenerate: document.getElementById('autoGenerateMode'),
         wildcard: document.getElementById('wildcardMode'),
         substring: document.getElementById('substringMode')
@@ -163,6 +164,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null
                     };
 
+                } else if (mode === 'chain') {
+                    apiPath = '/api/chain_shiritori';
+                    const patternVal = getVal('chainPattern').trim();
+                    const requiredStr = getVal('chainRequiredChars');
+                    const excludeStr = getVal('chainExcludeChars');
+
+                    if (!patternVal) {
+                        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
+                        return;
+                    }
+                    
+                    requestBody = {
+                        listName: commonListName,
+                        pattern: patternVal,
+                        requiredChars: requiredStr ? requiredStr.split(',').map(c => c.trim()) : null,
+                        excludeChars: excludeStr ? excludeStr.split(',').map(c => c.trim()) : null,
+                        requiredCharMode: getChecked('chainRequiredCharExactly') ? 'exactly' : 'atLeast'
+                    };
+
                 } else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
                     const firstCharVal = getVal('autoFirstChar').trim() || null;
@@ -217,8 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 自動生成モードの結果表示
-        if (mode === 'autoGenerate') {
+        // 自動生成モード / チェーンモードの結果表示
+        if (mode === 'autoGenerate' || mode === 'chain') {
             if (data.conditions) {
                 const conditionsDiv = document.createElement('div');
                 conditionsDiv.style.padding = '15px';

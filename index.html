@@ -33,6 +33,7 @@
                 <option value="wildcardShiritori">？文字指定しりとり（経路）</option>
                 <option value="wordCountShiritori">単語数指定しりとり</option>
                 <option value="loop">ループ検索</option>
+                <option value="chain">チェーン検索</option>
                 <option value="autoGenerate">自動生成モード</option>
                 <hr>
                 <option value="wildcard">単語検索（？使用）</option>
@@ -152,12 +153,42 @@
 
         <div id="loopMode" class="mode-section">
             <h2>ループ検索</h2>
+            <p class="description">最後の文字が最初の文字に戻る輪のような経路を探します。</p>
             <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
             <div class="form-group">
                 <label>合計文字数</label>
                 <input type="number" id="loopTotalLength" placeholder="例: 20" min="1">
             </div>
             <button class="search-btn primary">ループを見つける</button>
+        </div>
+
+        <div id="chainMode" class="mode-section">
+            <h2>チェーン検索</h2>
+            <p class="description">パターンと必須文字で条件を指定して、しりとりの経路を探します。（輪にしない）</p>
+            
+            <div class="form-group">
+                <label>パターン（?で任意の1文字）</label>
+                <input type="text" id="chainPattern" placeholder="例: ？？？？ゴ？？ト">
+            </div>
+
+            <div class="form-group">
+                <label>必須文字（含める文字）</label>
+                <input type="text" id="chainRequiredChars" placeholder="例: ス,パ（カンマ区切り���">
+            </div>
+
+            <div class="form-group">
+                <label>除外文字</label>
+                <input type="text" id="chainExcludeChars" placeholder="例: ワ（カンマ区切り）">
+            </div>
+
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="chainRequiredCharExactly">
+                    <label for="chainRequiredCharExactly">必須文字をちょうど指定回数使う</label>
+                </div>
+            </div>
+
+            <button class="search-btn primary">チェーンを見つける</button>
         </div>
 
         <div id="autoGenerateMode" class="mode-section">
