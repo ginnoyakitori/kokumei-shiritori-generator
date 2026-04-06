@@ -212,6 +212,18 @@ function filterUniquePairOnly(results) {
 }
 
 /**
+ * 合計文字数でフィルタリング
+ */
+function filterByTotalLength(results, totalLength) {
+    if (!totalLength) return results;
+    
+    return results.filter(path => {
+        const totalChars = path.join('').length;
+        return totalChars === totalLength;
+    });
+}
+
+/**
  * 必須文字のチェックを部分文字列の出現回数ベースで実行
  */
 function checkRequiredChars(path, requiredChars, requiredCharMode) {
@@ -749,7 +761,7 @@ console.log('Word data loaded successfully!');
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly, totalLength } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -795,6 +807,11 @@ app.post('/api/shiritori', (req, res) => {
                 results = filterUniquePairOnly(results);
             }
             
+            // 合計文字数でフィルタリング
+            if (totalLength) {
+                results = filterByTotalLength(results, totalLength);
+            }
+            
             const elapsed = Date.now() - startTime;
             console.log(`Shiritori search completed in ${elapsed}ms (${results.length} results)`);
             
@@ -819,6 +836,11 @@ app.post('/api/shiritori', (req, res) => {
         
         if (uniquePairOnly) {
             results = filterUniquePairOnly(results);
+        }
+        
+        // 合計文字数でフィルタリング
+        if (totalLength) {
+            results = filterByTotalLength(results, totalLength);
         }
         
         const counts = {};
@@ -865,6 +887,11 @@ app.post('/api/shiritori', (req, res) => {
             results = filterUniquePairOnly(results);
         }
         
+        // 合計文字数でフィルタリング
+        if (totalLength) {
+            results = filterByTotalLength(results, totalLength);
+        }
+        
         const elapsed = Date.now() - startTime;
         console.log(`Shiritori path search completed in ${elapsed}ms (${results.length} results)`);
         
@@ -874,9 +901,8 @@ app.post('/api/shiritori', (req, res) => {
 
 
 // 単語数指定しりとり (必須文字複数文字列対応)
-// 単語数指定しりとり (必須文字複数文字列対応)
 app.post('/api/word_count_shiritori', (req, res) => {
-    let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths } = req.body;
+    let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths, totalLength } = req.body;
     const map = wordMap[listName];
 
     if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
@@ -893,9 +919,13 @@ app.post('/api/word_count_shiritori', (req, res) => {
     try {
         let results = findShiritoriByWordCountPatterns(map, wordCountPatterns, null, allowPermutation, 'atLeast', listName);
         
-        // uniqueWordLengths フィルタリング
         if (uniqueWordLengths) {
             results = filterUniqueWordLengths(results);
+        }
+        
+        // 合計文字数でフィルタリング
+        if (totalLength) {
+            results = filterByTotalLength(results, totalLength);
         }
         
         const elapsed = Date.now() - startTime;
@@ -907,6 +937,7 @@ app.post('/api/word_count_shiritori', (req, res) => {
         return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
     }
 });
+
 
 // ？文字検索 (既存)
 app.post('/api/wildcard_search', (req, res) => {
@@ -938,7 +969,7 @@ app.post('/api/substring_search', (req, res) => {
 
 // ？文字指定しりとり検索 (複数位置パターン・必須文字複数文字列対応)
 app.post('/api/wildcard_shiritori', (req, res) => {
-    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode } = req.body;
+    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode, totalLength } = req.body;
     const map = wordMap[listName];
 
     if (!map) {
@@ -965,7 +996,12 @@ app.post('/api/wildcard_shiritori', (req, res) => {
 
     const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
-    const results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode, listName);
+    let results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode, listName);
+    
+    // 合計文字数でフィルタリング
+    if (totalLength) {
+        results = filterByTotalLength(results, totalLength);
+    }
     
     return res.json({ results });
 });
@@ -1031,7 +1067,7 @@ function findLoopShiritori(wordMap, pattern, listName) {
 
 // 🚨 【追加】フロントエンドからのリクエストを受けるエンドポイント
 app.post('/api/loop_shiritori', (req, res) => {
-    const { listName, pattern } = req.body;
+    const { listName, pattern, totalLength } = req.body;
     const map = wordMap[listName];
     
     if (!map || !pattern) {
@@ -1041,7 +1077,13 @@ app.post('/api/loop_shiritori', (req, res) => {
     const startTime = Date.now();
 
     try {
-        const results = findLoopShiritori(map, pattern, listName);
+        let results = findLoopShiritori(map, pattern, listName);
+        
+        // 合計文字数でフィルタリング
+        if (totalLength) {
+            results = filterByTotalLength(results, totalLength);
+        }
+        
         const elapsed = Date.now() - startTime;
         console.log(`Loop shiritori search completed in ${elapsed}ms (${results.length} results)`);
         

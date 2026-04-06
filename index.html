@@ -75,6 +75,10 @@
                 </div>
             </div>
             <div class="form-group">
+                <label>合計文字数</label>
+                <input type="number" id="shiritoriTotalLength" placeholder="例: 15" min="1">
+            </div>
+            <div class="form-group">
                 <label>出力オプション</label>
                 <div class="radio-group">
                     <input type="radio" id="outputPath" name="outputType" value="path" checked>
@@ -114,6 +118,10 @@
                 <label>最後の単語パターン:</label>
                 <input type="text" id="lastWordPattern" class="word-pattern-input" placeholder="例: ロ？ア">
             </div>
+            <div class="form-group">
+                <label>合計文字数</label>
+                <input type="number" id="wildcardTotalLength" placeholder="例: 15" min="1">
+            </div>
             <button class="search-btn primary">指定パターンで検索</button>
         </div>
 
@@ -134,12 +142,20 @@
                 <input type="checkbox" id="uniqueWordLengthsWordCount">
                 <label for="uniqueWordLengthsWordCount">単語の文字数がすべて異なる経路のみ表示</label>
             </div>
+            <div class="form-group">
+                <label>合計文字数</label>
+                <input type="number" id="wordCountTotalLength" placeholder="例: 15" min="1">
+            </div>
             <button class="search-btn primary">検索実行</button>
         </div>
 
         <div id="loopMode" class="mode-section">
             <h2>ループ検索</h2>
             <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
+            <div class="form-group">
+                <label>合計文字数</label>
+                <input type="number" id="loopTotalLength" placeholder="例: 20" min="1">
+            </div>
             <button class="search-btn primary">ループを見つける</button>
         </div>
 
