@@ -95,6 +95,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- 3.5 自動生成モード：条件モード切り替え ---
+    const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
+    conditionModeSelects.forEach(select => {
+        select.addEventListener('change', (e) => {
+            const container = e.target.closest('.auto-condition-group').querySelector('.condition-input-container');
+            if (container) {
+                const mode = e.target.value;
+                container.style.display = (mode === 'none') ? 'none' : 'block';
+            }
+        });
+    });
+
     // --- 4. 検索実行メインロジック ---
     searchButtons.forEach(button => {
         button.addEventListener('click', async () => {
@@ -185,21 +197,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
-                    const firstCharVal = getVal('autoFirstChar').trim() || null;
-                    const lastCharVal = getVal('autoLastChar').trim() || null;
-                    const wordCountVal = parseInt(getVal('autoWordCount'), 10);
-                    const maxSolutionsVal = parseInt(getVal('autoMaxSolutions'), 10);
-                    const searchTotalLengthVal = getChecked('autoSearchTotalLength');
-                    const searchUniqueLengthsVal = getChecked('autoSearchUniqueWordLengths');
+                    
+                    // 条件の取得と構築
+                    const getConditionMode = (conditionName) => {
+                        const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
+                        return select ? select.value : 'none';
+                    };
+
+                    const getConditionValue = (conditionName) => {
+                        const input = document.getElementById(`auto${conditionName.charAt(0).toUpperCase()}${conditionName.slice(1)}`);
+                        return input ? input.value : '';
+                    };
+
+                    const minSolutions = parseInt(getVal('autoMinSolutions'), 10) || 5;
+                    const maxSolutions = parseInt(getVal('autoMaxSolutions'), 10) || 20;
 
                     requestBody = {
                         listName: commonListName,
-                        firstChar: firstCharVal,
-                        lastChar: lastCharVal,
-                        wordCount: wordCountVal,
-                        maxSolutions: maxSolutionsVal,
-                        searchTotalLength: searchTotalLengthVal,
-                        searchUniqueWordLengths: searchUniqueLengthsVal
+                        minSolutions: minSolutions,
+                        maxSolutions: maxSolutions,
+                        
+                        // 各条件のモード（'none', 'fixed', 'auto'）と値
+                        firstCharMode: getConditionMode('firstChar'),
+                        firstChar: getVal('autoFirstChar').trim() || null,
+                        
+                        lastCharMode: getConditionMode('lastChar'),
+                        lastChar: getVal('autoLastChar').trim() || null,
+                        
+                        wordCountMode: getConditionMode('wordCount'),
+                        wordCount: getVal('autoWordCount') ? parseInt(getVal('autoWordCount'), 10) : null,
+                        
+                        includeCharsMode: getConditionMode('includeChars'),
+                        includeChars: getVal('autoIncludeChars').trim() ? getVal('autoIncludeChars').split(',').map(c => c.trim()) : null,
+                        
+                        excludeCharsMode: getConditionMode('excludeChars'),
+                        excludeChars: getVal('autoExcludeChars').trim() ? getVal('autoExcludeChars').split(',') : null,
+                        
+                        totalLengthMode: getConditionMode('totalLength'),
+                        totalLength: getVal('autoTotalLength') ? parseInt(getVal('autoTotalLength'), 10) : null,
+                        
+                        uniqueWordLengths: getChecked('autoUniqueWordLengths')
                     };
 
                 } else if (mode === 'wildcard') {
