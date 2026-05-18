@@ -333,3 +333,54 @@ select {
     padding: 20px;
     font-style: italic;
 }
+
+/* ===== 自動生成モード用スタイル ===== */
+
+/* 条件グループ */
+.auto-condition-group {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 5px;
+    background-color: #fafafa;
+}
+
+.condition-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 10px;
+}
+
+.condition-header h3 {
+    margin: 0;
+    font-size: 1em;
+    color: #333;
+    flex-grow: 1;
+}
+
+.condition-mode-select {
+    width: auto;
+    flex-shrink: 0;
+    min-width: 120px;
+    padding: 6px 10px;
+    font-size: 0.95em;
+}
+
+.condition-input-container {
+    display: none;
+}
+
+.condition-input-container input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95em;
+}
+
+/* 初期状態で固定状態の入力を表示 */
+.auto-condition-group:has(.condition-mode-select:not([value="none"])) .condition-input-container {
+    display: block;
+}
