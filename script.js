@@ -97,14 +97,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 3.5 自動生成モード：条件モード切り替え ---
     const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
-    conditionModeSelects.forEach(select => {
-        select.addEventListener('change', (e) => {
-            const container = e.target.closest('.auto-condition-group').querySelector('.condition-input-container');
-            if (container) {
-                const mode = e.target.value;
-                container.style.display = (mode === 'none') ? 'none' : 'block';
+
+    const updateAutoConditionRow = (select) => {
+        const row = select.closest('.auto-condition-group');
+        if (!row) return;
+        const container = row.querySelector('.condition-input-container');
+        const input = row.querySelector('.auto-condition-input');
+        if (!container || !input) return;
+
+        const mode = select.value;
+        if (mode === 'fixed') {
+            container.style.display = 'block';
+            input.disabled = false;
+            if (input.dataset.placeholderFixed) {
+                input.placeholder = input.dataset.placeholderFixed;
             }
-        });
+        } else if (mode === 'auto') {
+            container.style.display = 'block';
+            input.disabled = true;
+            if (!input.dataset.placeholderFixed) {
+                input.dataset.placeholderFixed = input.placeholder;
+            }
+            input.placeholder = '自動で決定';
+            input.value = '';
+        } else {
+            container.style.display = 'none';
+            input.disabled = true;
+            input.value = '';
+        }
+    };
+
+    conditionModeSelects.forEach(select => {
+        updateAutoConditionRow(select);
+        select.addEventListener('change', (e) => updateAutoConditionRow(e.target));
     });
 
     // --- 4. 検索実行メインロジック ---
@@ -205,8 +230,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                     const getConditionValue = (conditionName) => {
+                        const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
+                        if (!select || select.value !== 'fixed') {
+                            return null;
+                        }
                         const input = document.getElementById(`auto${conditionName.charAt(0).toUpperCase()}${conditionName.slice(1)}`);
-                        return input ? input.value : '';
+                        return input ? input.value.trim() || null : null;
                     };
 
                     const minSolutions = parseInt(getVal('autoMinSolutions'), 10) || 5;
@@ -217,24 +246,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         minSolutions: minSolutions,
                         maxSolutions: maxSolutions,
                         
-                        // 各条件のモード（'none', 'fixed', 'auto'）と値
                         firstCharMode: getConditionMode('firstChar'),
-                        firstChar: getVal('autoFirstChar').trim() || null,
+                        firstChar: getConditionValue('firstChar'),
                         
                         lastCharMode: getConditionMode('lastChar'),
-                        lastChar: getVal('autoLastChar').trim() || null,
+                        lastChar: getConditionValue('lastChar'),
                         
                         wordCountMode: getConditionMode('wordCount'),
-                        wordCount: getVal('autoWordCount') ? parseInt(getVal('autoWordCount'), 10) : null,
+                        wordCount: getConditionValue('wordCount') ? parseInt(getConditionValue('wordCount'), 10) : null,
                         
                         includeCharsMode: getConditionMode('includeChars'),
-                        includeChars: getVal('autoIncludeChars').trim() ? getVal('autoIncludeChars').split(',').map(c => c.trim()) : null,
+                        includeChars: getConditionValue('includeChars') ? getConditionValue('includeChars').split(',').map(c => c.trim()).filter(c => c) : null,
                         
                         excludeCharsMode: getConditionMode('excludeChars'),
-                        excludeChars: getVal('autoExcludeChars').trim() ? getVal('autoExcludeChars').split(',') : null,
+                        excludeChars: getConditionValue('excludeChars') ? getConditionValue('excludeChars').split(',').map(c => c.trim()).filter(c => c) : null,
                         
                         totalLengthMode: getConditionMode('totalLength'),
-                        totalLength: getVal('autoTotalLength') ? parseInt(getVal('autoTotalLength'), 10) : null,
+                        totalLength: getConditionValue('totalLength') ? parseInt(getConditionValue('totalLength'), 10) : null,
                         
                         uniqueWordLengths: getChecked('autoUniqueWordLengths')
                     };
