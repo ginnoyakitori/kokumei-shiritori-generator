@@ -173,7 +173,7 @@
 
             <div class="form-group">
                 <label>必須文字（含める文字）</label>
-                <input type="text" id="chainRequiredChars" placeholder="例: ス,パ（カンマ区切り���">
+                <input type="text" id="chainRequiredChars" placeholder="例: ス,パ（カンマ区切り）">
             </div>
 
             <div class="form-group">
@@ -193,42 +193,114 @@
 
         <div id="autoGenerateMode" class="mode-section">
             <h2>自動生成モード</h2>
-            <p class="description">条件に合うしりとりの組合せが、指定した上限数以下となるような条件を自動で探索します。</p>
+            <p class="description">解の個数の範囲を指定し、条件を自動で調整してしりとりを生成します。</p>
             
             <div class="form-group">
-                <label>必ず変えない条件</label>
-                <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #f5f5f5;">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>開始文字</label>
-                            <input type="text" id="autoFirstChar" placeholder="例: ア">
-                        </div>
-                        <div class="form-group">
-                            <label>終了文字</label>
-                            <input type="text" id="autoLastChar" placeholder="例: ン">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>単語数</label>
-                        <input type="number" id="autoWordCount" value="3" min="1">
-                    </div>
+                <label>解の個数範囲</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="number" id="autoMinSolutions" value="5" min="1" placeholder="最小">
+                    <span>～</span>
+                    <input type="number" id="autoMaxSolutions" value="20" min="1" placeholder="最大">
+                    <span>個</span>
                 </div>
             </div>
 
-            <div class="form-group">
-                <label>解の上限数</label>
-                <input type="number" id="autoMaxSolutions" value="10" min="1">
+            <!-- 開始文字設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>開始文字</h3>
+                    <select class="condition-mode-select" data-condition="firstChar">
+                        <option value="none">設定しない</option>
+                        <option value="fixed" selected>設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
+                </div>
+                <div class="condition-input-container">
+                    <input type="text" class="auto-condition-input" id="autoFirstChar" placeholder="例: ア">
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>検索対象</label>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="autoSearchTotalLength" checked>
-                    <label for="autoSearchTotalLength">合計文字数で条件を変更</label>
+            <!-- 終了文字設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>終了文字</h3>
+                    <select class="condition-mode-select" data-condition="lastChar">
+                        <option value="none">設定しない</option>
+                        <option value="fixed" selected>設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
                 </div>
+                <div class="condition-input-container">
+                    <input type="text" class="auto-condition-input" id="autoLastChar" placeholder="例: ン">
+                </div>
+            </div>
+
+            <!-- 単語数設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>単語数</h3>
+                    <select class="condition-mode-select" data-condition="wordCount">
+                        <option value="none">設定しない</option>
+                        <option value="fixed" selected>設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
+                </div>
+                <div class="condition-input-container">
+                    <input type="number" class="auto-condition-input" id="autoWordCount" value="3" min="1">
+                </div>
+            </div>
+
+            <!-- 含める文字設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>含める文字</h3>
+                    <select class="condition-mode-select" data-condition="includeChars">
+                        <option value="none" selected>設定しない</option>
+                        <option value="fixed">設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
+                </div>
+                <div class="condition-input-container" style="display: none;">
+                    <input type="text" class="auto-condition-input" id="autoIncludeChars" placeholder="例: ス,パ（カンマ区切り）">
+                </div>
+            </div>
+
+            <!-- 除外する文字設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>除外する文字</h3>
+                    <select class="condition-mode-select" data-condition="excludeChars">
+                        <option value="none" selected>設定しない</option>
+                        <option value="fixed">設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
+                </div>
+                <div class="condition-input-container" style="display: none;">
+                    <input type="text" class="auto-condition-input" id="autoExcludeChars" placeholder="例: ワ（カンマ区切り）">
+                </div>
+            </div>
+
+            <!-- 合計文字数設定 -->
+            <div class="auto-condition-group">
+                <div class="condition-header">
+                    <h3>合計文字数</h3>
+                    <select class="condition-mode-select" data-condition="totalLength">
+                        <option value="none" selected>設定しない</option>
+                        <option value="fixed">設定する</option>
+                        <option value="auto">自動で設定</option>
+                    </select>
+                </div>
+                <div class="condition-input-container" style="display: none;">
+                    <input type="number" class="auto-condition-input" id="autoTotalLength" placeholder="例: 15" min="1">
+                </div>
+            </div>
+
+            <!-- オプション -->
+            <div class="form-group">
+                <label>検索オプション</label>
                 <div class="checkbox-group">
-                    <input type="checkbox" id="autoSearchUniqueWordLengths">
-                    <label for="autoSearchUniqueWordLengths">文字数の一意性条件</label>
+                    <input type="checkbox" id="autoUniqueWordLengths">
+                    <label for="autoUniqueWordLengths">単語の文字数がすべて異なる経路のみ検索</label>
                 </div>
             </div>
 
