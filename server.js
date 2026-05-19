@@ -429,27 +429,27 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
 
         if (isEndWordCondition) {
              if (lastChar === null || lastChar === lastCharOfCurrent) {
-                  let isNoSucceeding = true;
-                  if (noSucceedingWord) {
-                       isNoSucceeding = !allWords.some(word => word !== currentWord && normalizeWord(word) === lastCharOfCurrent);
-                  }
-                    
-                  if (isNoSucceeding && 
-                      checkRequiredChars(path, requiredChars, requiredCharMode) && 
-                      checkExcludeChars(path, excludeChars)) {
-                      
-                      const pathKey = path.join(',');
-                      if (!seenPaths.has(pathKey)) {
-                          seenPaths.add(pathKey);
-                          
-                          if (currentLength < shortestLength) {
-                              shortestLength = currentLength;
-                              shortestPaths = [path];
-                          } else if (currentLength === shortestLength) {
-                              shortestPaths.push(path);
-                          }
-                      }
-                  }
+                   let isNoSucceeding = true;
+                   if (noSucceedingWord) {
+                        isNoSucceeding = !allWords.some(word => word !== currentWord && normalizeWord(word) === lastCharOfCurrent);
+                   }
+                     
+                   if (isNoSucceeding && 
+                       checkRequiredChars(path, requiredChars, requiredCharMode) && 
+                       checkExcludeChars(path, excludeChars)) {
+                       
+                       const pathKey = path.join(',');
+                       if (!seenPaths.has(pathKey)) {
+                           seenPaths.add(pathKey);
+                           
+                           if (currentLength < shortestLength) {
+                               shortestLength = currentLength;
+                               shortestPaths = [path];
+                           } else if (currentLength === shortestLength) {
+                               shortestPaths.push(path);
+                           }
+                       }
+                   }
              }
 
              if (lastCharOfCurrent === 'ン' || currentLength === shortestLength) continue;
@@ -566,17 +566,17 @@ function findShiritoriCombinations(wordMap, firstChar, lastChar, wordCount, requ
              
              let isNoSucceeding = true;
              if (noSucceedingWord) {
-               const nextWordList = wordsByFirstChar[listName][endChar] || [];
-               isNoSucceeding = !nextWordList.some(nextWord => nextWord !== word);
+                const nextWordList = wordsByFirstChar[listName][endChar] || [];
+                isNoSucceeding = !nextWordList.some(nextWord => nextWord !== word);
              }
              
              let isNoPreceding = true;
              if (noPrecedingWord) {
-               const firstCharOfWord = normalizeWord(word);
-               isNoPreceding = !allWords.some(prevWord => {
-                   if (prevWord === word) return false;
-                   return getShiritoriLastChar(prevWord) === firstCharOfWord;
-               });
+                const firstCharOfWord = normalizeWord(word);
+                isNoPreceding = !allWords.some(prevWord => {
+                    if (prevWord === word) return false;
+                    return getShiritoriLastChar(prevWord) === firstCharOfWord;
+                });
              }
 
              if (isNoPreceding && isNoSucceeding && (lastChar === null || endChar === lastChar) && 
@@ -845,7 +845,7 @@ app.post('/api/shiritori', (req, res) => {
             results = filterUniquePairOnly(results);
         }
         
-        // 合計文字数でフィ���タリング
+        // 合計文字数でフィルタリング
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
@@ -1243,54 +1243,80 @@ app.post('/api/chain_shiritori', (req, res) => {
 });
 
 /**
- * 自動生成モード
- * 固定条件（開始文字、終了文字、単語数）で、指定した上限数以下となるように
- * 合計文字数や文字数一意性などの条件を自動調整
+ * 自動生成モード（改善版）
+ * 解の個数の範囲を指定して、条件を自動で調整
  */
 app.post('/api/auto_generate', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, maxSolutions, searchTotalLength, searchUniqueWordLengths } = req.body;
+    let { 
+        listName, 
+        minSolutions, 
+        maxSolutions,
+        firstCharMode, 
+        firstChar,
+        lastCharMode,
+        lastChar,
+        wordCountMode,
+        wordCount,
+        includeCharsMode,
+        includeChars,
+        excludeCharsMode,
+        excludeChars,
+        totalLengthMode,
+        totalLength,
+        uniqueWordLengths
+    } = req.body;
+    
     const map = wordMap[listName];
 
     if (!map) {
         return res.status(400).json({ error: '無効な単語リストです。' });
     }
 
-    if (!wordCount || wordCount < 1) {
-        return res.status(400).json({ error: '単語数は1以上の数字である必要があります。' });
+    if (!minSolutions || minSolutions < 1 || !maxSolutions || maxSolutions < 1) {
+        return res.status(400).json({ error: '解の個数範囲は1以上である必要があります。' });
     }
 
-    if (!maxSolutions || maxSolutions < 1) {
-        return res.status(400).json({ error: '解の上限数は1以上の数字である必要があります。' });
+    if (!wordCount || wordCount < 1) {
+        return res.status(400).json({ error: '単語数は1以上である必要があります。' });
     }
 
     const startTime = Date.now();
 
     try {
-        // 1. まずは条件なしで全検索を実行
+        // 固定条件の確定
+        const fixedFirstChar = firstCharMode === 'fixed' ? (firstChar?.trim() || null) : null;
+        const fixedLastChar = lastCharMode === 'fixed' ? (lastChar?.trim() || null) : null;
+        const fixedWordCount = wordCountMode === 'fixed' ? wordCount : null;
+        const fixedIncludeChars = includeCharsMode === 'fixed' ? includeChars : null;
+        const fixedExcludeChars = excludeCharsMode === 'fixed' ? excludeChars : null;
+        const fixedTotalLength = totalLengthMode === 'fixed' ? totalLength : null;
+
+        // まずは基本検索を実行
         let baseResults = findShiritoriCombinations(
-            map, 
-            firstChar || null, 
-            lastChar || null, 
-            wordCount, 
-            null, 
-            null, 
-            false, 
-            false, 
-            'atLeast', 
+            map,
+            fixedFirstChar,
+            fixedLastChar,
+            fixedWordCount || wordCount,
+            fixedIncludeChars,
+            fixedExcludeChars,
+            false,
+            false,
+            'atLeast',
             listName
         );
 
         const resultConditions = {
-            firstChar: firstChar || '（指定なし）',
-            lastChar: lastChar || '（指定なし）',
-            wordCount: wordCount
+            firstChar: fixedFirstChar || '（自動）',
+            lastChar: fixedLastChar || '（自動）',
+            wordCount: fixedWordCount || wordCount,
+            includeChars: fixedIncludeChars ? fixedIncludeChars.join(',') : '（指定なし）',
+            excludeChars: fixedExcludeChars ? fixedExcludeChars.join(',') : '（指定なし）'
         };
 
         let finalResults = baseResults;
 
-        // 2. 合計文字数で絞り込む
-        if (searchTotalLength && finalResults.length > maxSolutions) {
-            // 合計文字数別に経路をグループ化
+        // 合計文字数で調整
+        if (totalLengthMode === 'auto' && finalResults.length > maxSolutions) {
             const byLength = {};
             finalResults.forEach(path => {
                 const totalLen = path.join('').length;
@@ -1300,7 +1326,6 @@ app.post('/api/auto_generate', (req, res) => {
                 byLength[totalLen].push(path);
             });
 
-            // 合計文字数が少ない順に、解の上限数以下になるまで絞り込む
             const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
             finalResults = [];
             for (const len of sortedLengths) {
@@ -1309,14 +1334,16 @@ app.post('/api/auto_generate', (req, res) => {
                 finalResults = finalResults.concat(byLength[len].slice(0, remaining));
             }
 
-            // グループ化に成功したら、使用した文字数を記録
             if (finalResults.length > 0) {
                 resultConditions.totalLength = finalResults[0].join('').length;
             }
+        } else if (fixedTotalLength) {
+            finalResults = filterByTotalLength(finalResults, fixedTotalLength);
+            resultConditions.totalLength = fixedTotalLength;
         }
 
-        // 3. 文字数一意性で絞り込む
-        if (searchUniqueWordLengths && finalResults.length > maxSolutions) {
+        // 単語文字数一意性で調整
+        if (uniqueWordLengths && finalResults.length > maxSolutions) {
             const uniqueLengthResults = filterUniqueWordLengths(finalResults);
             if (uniqueLengthResults.length > 0 && uniqueLengthResults.length <= maxSolutions) {
                 finalResults = uniqueLengthResults;
@@ -1324,7 +1351,16 @@ app.post('/api/auto_generate', (req, res) => {
             }
         }
 
-        // 4. 上限を超えていても最大maxSolutions件まで返す
+        // 解の個数が範囲内か確認
+        if (finalResults.length < minSolutions) {
+            return res.json({
+                results: [],
+                conditions: resultConditions,
+                message: `解の個数が範囲外です。最小${minSolutions}個必要ですが、${finalResults.length}個しか見つかりませんでした。`
+            });
+        }
+
+        // 上限を超えた場合はカット
         if (finalResults.length > maxSolutions) {
             finalResults = finalResults.slice(0, maxSolutions);
         }
@@ -1332,7 +1368,7 @@ app.post('/api/auto_generate', (req, res) => {
         const elapsed = Date.now() - startTime;
         console.log(`Auto generate completed in ${elapsed}ms (${finalResults.length} results)`);
 
-        return res.json({ 
+        return res.json({
             results: finalResults,
             conditions: resultConditions
         });
