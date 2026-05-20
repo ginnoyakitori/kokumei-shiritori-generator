@@ -223,6 +223,124 @@ function filterByTotalLength(results, totalLength) {
     });
 }
 
+const DAKUTEN_CHARS = new Set('ガギグゲゴザジズゼゾダヂヅデドバビブベボヴがぎぐげござじずぜぞだぢづでどばびぶべぼゔ');
+const HANDAKUTEN_CHARS = new Set('パピプペポぱぴぷぺぽ');
+const SMALL_KANA_CHARS = new Set('ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ');
+
+function countCharsInPath(path, charSet) {
+    return path.join('').split('').filter(char => charSet.has(char)).length;
+}
+
+function hasRepeatedChar(word) {
+    const seen = new Set();
+    for (const char of word.normalize('NFKC')) {
+        if (seen.has(char)) return true;
+        seen.add(char);
+    }
+    return false;
+}
+
+function countWordsWithRepeatedChars(path) {
+    return path.filter(hasRepeatedChar).length;
+}
+
+function hasPrecedingWord(path, listName) {
+    if (!path.length) return false;
+    const firstWord = path[0];
+    const firstChar = normalizeWord(firstWord);
+    const allWords = allWordsCache[listName] || [];
+    return allWords.some(word => word !== firstWord && getShiritoriLastChar(word) === firstChar);
+}
+
+function hasSucceedingWord(path, listName) {
+    if (!path.length) return false;
+    const lastWord = path[path.length - 1];
+    const lastChar = getShiritoriLastChar(lastWord);
+    const nextWords = wordsByFirstChar[listName]?.[lastChar] || [];
+    return nextWords.some(word => word !== lastWord && !path.includes(word));
+}
+
+function matchesNumberRule(actual, rule) {
+    if (rule === undefined || rule === null || rule === '') return true;
+    if (typeof rule === 'number') return actual === rule;
+    if (typeof rule !== 'object') return true;
+
+    const mode = rule.mode || 'exact';
+    const value = Number(rule.value);
+    if (Number.isNaN(value)) return true;
+
+    if (mode === 'min') return actual >= value;
+    if (mode === 'max') return actual <= value;
+    return actual === value;
+}
+
+function matchesLengthPattern(path, pattern) {
+    if (!pattern) return true;
+    const lengths = path.map(word => word.length);
+    if (lengths.length <= 1) return true;
+
+    if (pattern === 'increasing') {
+        return lengths.every((length, index) => index === 0 || length > lengths[index - 1]);
+    }
+
+    if (pattern === 'nondecreasing') {
+        return lengths.every((length, index) => index === 0 || length >= lengths[index - 1]);
+    }
+
+    if (pattern === 'decreasing') {
+        return lengths.every((length, index) => index === 0 || length < lengths[index - 1]);
+    }
+
+    if (pattern === 'nonincreasing') {
+        return lengths.every((length, index) => index === 0 || length <= lengths[index - 1]);
+    }
+
+    if (pattern === 'arithmetic') {
+        if (lengths.length <= 2) return true;
+        const diff = lengths[1] - lengths[0];
+        return lengths.every((length, index) => index < 2 || length - lengths[index - 1] === diff);
+    }
+
+    if (pattern === 'geometric') {
+        if (lengths.length <= 2) return true;
+        if (lengths[0] === 0) return false;
+        const ratio = lengths[1] / lengths[0];
+        return lengths.every((length, index) => {
+            if (index < 2) return true;
+            return Math.abs(lengths[index - 1] * ratio - length) < 1e-9;
+        });
+    }
+
+    return true;
+}
+
+function filterByAdvancedConditions(results, advancedConditions, listName) {
+    if (!advancedConditions || Object.keys(advancedConditions).length === 0) {
+        return results;
+    }
+
+    return results.filter(path => {
+        if (!matchesNumberRule(countCharsInPath(path, DAKUTEN_CHARS), advancedConditions.dakutenCount)) return false;
+        if (!matchesNumberRule(countCharsInPath(path, HANDAKUTEN_CHARS), advancedConditions.handakutenCount)) return false;
+        if (!matchesNumberRule(countCharsInPath(path, SMALL_KANA_CHARS), advancedConditions.smallKanaCount)) return false;
+        if (!matchesNumberRule(countWordsWithRepeatedChars(path), advancedConditions.repeatedCharWordCount)) return false;
+
+        if (advancedConditions.hasPrecedingWord !== undefined &&
+            hasPrecedingWord(path, listName) !== advancedConditions.hasPrecedingWord) {
+            return false;
+        }
+
+        if (advancedConditions.hasSucceedingWord !== undefined &&
+            hasSucceedingWord(path, listName) !== advancedConditions.hasSucceedingWord) {
+            return false;
+        }
+
+        if (!matchesLengthPattern(path, advancedConditions.lengthPattern)) return false;
+
+        return true;
+    });
+}
+
 /**
  * 必須文字のチェックを部分文字列の出現回数ベースで実行
  */
@@ -768,7 +886,7 @@ console.log('Word data loaded successfully!');
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly, totalLength } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, uniqueWordLengths, uniquePairOnly, totalLength, advancedConditions } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -818,6 +936,8 @@ app.post('/api/shiritori', (req, res) => {
             if (totalLength) {
                 results = filterByTotalLength(results, totalLength);
             }
+
+            results = filterByAdvancedConditions(results, advancedConditions, listName);
             
             const elapsed = Date.now() - startTime;
             console.log(`Shiritori search completed in ${elapsed}ms (${results.length} results)`);
@@ -849,6 +969,8 @@ app.post('/api/shiritori', (req, res) => {
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
+
+        results = filterByAdvancedConditions(results, advancedConditions, listName);
         
         const counts = {};
         results.forEach(path => {
@@ -898,6 +1020,8 @@ app.post('/api/shiritori', (req, res) => {
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
+
+        results = filterByAdvancedConditions(results, advancedConditions, listName);
         
         const elapsed = Date.now() - startTime;
         console.log(`Shiritori path search completed in ${elapsed}ms (${results.length} results)`);
@@ -909,7 +1033,7 @@ app.post('/api/shiritori', (req, res) => {
 
 // 単語数指定しりとり (必須文字複数文字列対応)
 app.post('/api/word_count_shiritori', (req, res) => {
-    let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths, totalLength } = req.body;
+    let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths, totalLength, advancedConditions } = req.body;
     const map = wordMap[listName];
 
     if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
@@ -934,6 +1058,8 @@ app.post('/api/word_count_shiritori', (req, res) => {
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
+
+        results = filterByAdvancedConditions(results, advancedConditions, listName);
         
         const elapsed = Date.now() - startTime;
         console.log(`Word count shiritori search completed in ${elapsed}ms (${results.length} results)`);
@@ -976,7 +1102,7 @@ app.post('/api/substring_search', (req, res) => {
 
 // ？文字指定しりとり検索 (複数位置パターン・必須文字複数文字列対応)
 app.post('/api/wildcard_shiritori', (req, res) => {
-    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode, totalLength } = req.body;
+    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode, totalLength, advancedConditions } = req.body;
     const map = wordMap[listName];
 
     if (!map) {
@@ -1009,6 +1135,8 @@ app.post('/api/wildcard_shiritori', (req, res) => {
     if (totalLength) {
         results = filterByTotalLength(results, totalLength);
     }
+
+    results = filterByAdvancedConditions(results, advancedConditions, listName);
     
     return res.json({ results });
 });
@@ -1074,7 +1202,7 @@ function findLoopShiritori(wordMap, pattern, listName) {
 
 // フロントエンドからのリクエストを受けるエンドポイント
 app.post('/api/loop_shiritori', (req, res) => {
-    const { listName, pattern, totalLength } = req.body;
+    const { listName, pattern, totalLength, advancedConditions } = req.body;
     const map = wordMap[listName];
     
     if (!map || !pattern) {
@@ -1090,6 +1218,8 @@ app.post('/api/loop_shiritori', (req, res) => {
         if (totalLength) {
             results = filterByTotalLength(results, totalLength);
         }
+
+        results = filterByAdvancedConditions(results, advancedConditions, listName);
         
         const elapsed = Date.now() - startTime;
         console.log(`Loop shiritori search completed in ${elapsed}ms (${results.length} results)`);
@@ -1197,7 +1327,7 @@ function findChainShiritori(wordMap, pattern, requiredChars, excludeChars, requi
 }
 
 app.post('/api/chain_shiritori', (req, res) => {
-    let { listName, pattern, requiredChars, excludeChars, requiredCharMode } = req.body;
+    let { listName, pattern, requiredChars, excludeChars, requiredCharMode, advancedConditions } = req.body;
     const map = wordMap[listName];
 
     if (!map) {
@@ -1221,7 +1351,7 @@ app.post('/api/chain_shiritori', (req, res) => {
     const startTime = Date.now();
 
     try {
-        const results = findChainShiritori(
+        let results = findChainShiritori(
             map, 
             pattern, 
             requiredChars, 
@@ -1229,6 +1359,8 @@ app.post('/api/chain_shiritori', (req, res) => {
             mode, 
             listName
         );
+
+        results = filterByAdvancedConditions(results, advancedConditions, listName);
 
         const elapsed = Date.now() - startTime;
         console.log(`Chain shiritori search completed in ${elapsed}ms (${results.length} results)`);
@@ -1244,95 +1376,274 @@ app.post('/api/chain_shiritori', (req, res) => {
 
 /**
  * 自動生成モード
- * 固定条件（開始文字、終了文字、単語数）で、指定した上限数以下となるように
- * 合計文字数や文字数一意性などの条件を自動調整
+ * 解の個数範囲（最小～最大）を指定し、各条件のモード（設定しない/設定する/自動で設定）に応じて
+ * しりとりの条件を自動調整
  */
 app.post('/api/auto_generate', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, maxSolutions, searchTotalLength, searchUniqueWordLengths } = req.body;
+    let {
+        listName,
+        minSolutions,
+        maxSolutions,
+        firstCharMode,
+        firstChar,
+        lastCharMode,
+        lastChar,
+        wordCountMode,
+        wordCount,
+        includeCharsMode,
+        includeChars,
+        excludeCharsMode,
+        excludeChars,
+        totalLengthMode,
+        totalLength,
+        uniqueWordLengths,
+        advancedConditions
+    } = req.body;
+
     const map = wordMap[listName];
 
     if (!map) {
         return res.status(400).json({ error: '無効な単語リストです。' });
     }
 
-    if (!wordCount || wordCount < 1) {
-        return res.status(400).json({ error: '単語数は1以上の数字である必要があります。' });
-    }
+    minSolutions = parseInt(minSolutions, 10) || 5;
+    maxSolutions = parseInt(maxSolutions, 10) || 20;
 
-    if (!maxSolutions || maxSolutions < 1) {
-        return res.status(400).json({ error: '解の上限数は1以上の数字である必要があります。' });
+    if (minSolutions < 1 || maxSolutions < 1 || minSolutions > maxSolutions) {
+        return res.status(400).json({ error: '解の範囲を正しく指定してください（最小 ≤ 最大）。' });
     }
 
     const startTime = Date.now();
 
     try {
-        // 1. まずは条件なしで全検索を実行
-        let baseResults = findShiritoriCombinations(
-            map, 
-            firstChar || null, 
-            lastChar || null, 
-            wordCount, 
-            null, 
-            null, 
-            false, 
-            false, 
-            'atLeast', 
-            listName
-        );
+        const resultConditions = {};
 
-        const resultConditions = {
-            firstChar: firstChar || '（指定なし）',
-            lastChar: lastChar || '（指定なし）',
-            wordCount: wordCount
-        };
+        let fixedFirstChar = null;
+        let fixedLastChar = null;
+        let fixedWordCount = null;
+        let fixedIncludeChars = null;
+        let fixedExcludeChars = null;
+        let fixedTotalLength = null;
 
-        let finalResults = baseResults;
+        if (firstCharMode === 'fixed' && firstChar) {
+            fixedFirstChar = firstChar.trim();
+            resultConditions.firstChar = fixedFirstChar;
+        } else if (firstCharMode !== 'none') {
+            resultConditions.firstChar = '（自動調整）';
+        }
 
-        // 2. 合計文字数で絞り込む
-        if (searchTotalLength && finalResults.length > maxSolutions) {
-            // 合計文字数別に経路をグループ化
-            const byLength = {};
-            finalResults.forEach(path => {
-                const totalLen = path.join('').length;
-                if (!byLength[totalLen]) {
-                    byLength[totalLen] = [];
-                }
-                byLength[totalLen].push(path);
-            });
+        if (lastCharMode === 'fixed' && lastChar) {
+            fixedLastChar = lastChar.trim();
+            resultConditions.lastChar = fixedLastChar;
+        } else if (lastCharMode !== 'none') {
+            resultConditions.lastChar = '（自動調整）';
+        }
 
-            // 合計文字数が少ない順に、解の上限数以下になるまで絞り込む
-            const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
-            finalResults = [];
-            for (const len of sortedLengths) {
+        if (wordCountMode === 'fixed' && wordCount) {
+            fixedWordCount = parseInt(wordCount, 10);
+            if (fixedWordCount < 1) {
+                return res.status(400).json({ error: '単語数は1以上である必要があります。' });
+            }
+            resultConditions.wordCount = fixedWordCount;
+        } else if (wordCountMode !== 'none') {
+            resultConditions.wordCount = '（自動調整）';
+        }
+
+        if (includeCharsMode === 'fixed' && includeChars && includeChars.length > 0) {
+            fixedIncludeChars = includeChars;
+            resultConditions.includeChars = includeChars.join(',');
+        } else if (includeCharsMode !== 'none') {
+            resultConditions.includeChars = '（自動調整）';
+        }
+
+        if (excludeCharsMode === 'fixed' && excludeChars && excludeChars.length > 0) {
+            fixedExcludeChars = excludeChars;
+            resultConditions.excludeChars = excludeChars.join(',');
+        } else if (excludeCharsMode !== 'none') {
+            resultConditions.excludeChars = '（自動調整）';
+        }
+
+        if (totalLengthMode === 'fixed' && totalLength) {
+            fixedTotalLength = parseInt(totalLength, 10);
+            if (fixedTotalLength < 1) {
+                return res.status(400).json({ error: '合計文字数は1以上である必要があります。' });
+            }
+            resultConditions.totalLength = fixedTotalLength;
+        } else if (totalLengthMode !== 'none') {
+            resultConditions.totalLength = '（自動調整）';
+        }
+
+        resultConditions.uniqueWordLengths = uniqueWordLengths ? 'あり' : 'なし';
+
+        let finalResults = [];
+
+        if (wordCountMode === 'none' || !fixedWordCount) {
+            for (let tryWordCount = 2; tryWordCount <= 6; tryWordCount++) {
                 if (finalResults.length >= maxSolutions) break;
-                const remaining = maxSolutions - finalResults.length;
-                finalResults = finalResults.concat(byLength[len].slice(0, remaining));
+
+                let candidateResults = findShiritoriCombinations(
+                    map,
+                    fixedFirstChar,
+                    fixedLastChar,
+                    tryWordCount,
+                    fixedIncludeChars,
+                    fixedExcludeChars,
+                    false,
+                    false,
+                    'atLeast',
+                    listName
+                );
+
+                if (uniqueWordLengths) {
+                    candidateResults = filterUniqueWordLengths(candidateResults);
+                }
+
+                if (fixedTotalLength) {
+                    candidateResults = filterByTotalLength(candidateResults, fixedTotalLength);
+                }
+
+                candidateResults = filterByAdvancedConditions(candidateResults, advancedConditions, listName);
+
+                if (totalLengthMode === 'auto' && candidateResults.length > 0) {
+                    const byLength = {};
+                    candidateResults.forEach(path => {
+                        const totalLen = path.join('').length;
+                        if (!byLength[totalLen]) byLength[totalLen] = [];
+                        byLength[totalLen].push(path);
+                    });
+                    const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
+                    for (const len of sortedLengths) {
+                        if (finalResults.length >= maxSolutions) break;
+                        const remaining = maxSolutions - finalResults.length;
+                        finalResults.push(...byLength[len].slice(0, remaining));
+                    }
+                    if (finalResults.length > 0 && !fixedTotalLength) {
+                        resultConditions.totalLength = finalResults[0].join('').length;
+                    }
+                } else {
+                    finalResults.push(...candidateResults.slice(0, maxSolutions - finalResults.length));
+                }
+            }
+        } else {
+            let baseResults = findShiritoriCombinations(
+                map,
+                fixedFirstChar,
+                fixedLastChar,
+                fixedWordCount,
+                fixedIncludeChars,
+                fixedExcludeChars,
+                false,
+                false,
+                'atLeast',
+                listName
+            );
+
+            if (uniqueWordLengths) {
+                baseResults = filterUniqueWordLengths(baseResults);
             }
 
-            // グループ化に成功したら、使用した文字数を記録
-            if (finalResults.length > 0) {
-                resultConditions.totalLength = finalResults[0].join('').length;
+            baseResults = filterByAdvancedConditions(baseResults, advancedConditions, listName);
+
+            if (firstCharMode === 'auto' && baseResults.length > 0 && baseResults.length < minSolutions) {
+                baseResults = [];
+                const allWords = Object.values(map).flat();
+                const uniqueFirstChars = [...new Set(allWords.map(normalizeWord))];
+
+                for (const tryFirstChar of uniqueFirstChars) {
+                    if (baseResults.length >= maxSolutions) break;
+                    let candidateResults = findShiritoriCombinations(
+                        map,
+                        tryFirstChar,
+                        fixedLastChar,
+                        fixedWordCount,
+                        fixedIncludeChars,
+                        fixedExcludeChars,
+                        false,
+                        false,
+                        'atLeast',
+                        listName
+                    );
+                    if (uniqueWordLengths) {
+                        candidateResults = filterUniqueWordLengths(candidateResults);
+                    }
+                    candidateResults = filterByAdvancedConditions(candidateResults, advancedConditions, listName);
+                    baseResults.push(...candidateResults.slice(0, maxSolutions - baseResults.length));
+                }
+                if (baseResults.length > 0 && !fixedFirstChar) {
+                    resultConditions.firstChar = normalizeWord(baseResults[0][0]);
+                }
+            }
+
+            if (lastCharMode === 'auto' && baseResults.length > 0 && baseResults.length < minSolutions) {
+                baseResults = [];
+                const allWords = Object.values(map).flat();
+                const uniqueLastChars = [...new Set(allWords.map(getShiritoriLastChar))];
+
+                for (const tryLastChar of uniqueLastChars) {
+                    if (baseResults.length >= maxSolutions) break;
+                    let candidateResults = findShiritoriCombinations(
+                        map,
+                        fixedFirstChar,
+                        tryLastChar,
+                        fixedWordCount,
+                        fixedIncludeChars,
+                        fixedExcludeChars,
+                        false,
+                        false,
+                        'atLeast',
+                        listName
+                    );
+                    if (uniqueWordLengths) {
+                        candidateResults = filterUniqueWordLengths(candidateResults);
+                    }
+                    candidateResults = filterByAdvancedConditions(candidateResults, advancedConditions, listName);
+                    baseResults.push(...candidateResults.slice(0, maxSolutions - baseResults.length));
+                }
+                if (baseResults.length > 0 && !fixedLastChar) {
+                    resultConditions.lastChar = getShiritoriLastChar(baseResults[0][baseResults[0].length - 1]);
+                }
+            }
+
+            if (totalLengthMode === 'auto' && baseResults.length > maxSolutions) {
+                const byLength = {};
+                baseResults.forEach(path => {
+                    const totalLen = path.join('').length;
+                    if (!byLength[totalLen]) byLength[totalLen] = [];
+                    byLength[totalLen].push(path);
+                });
+                const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
+                finalResults = [];
+                for (const len of sortedLengths) {
+                    if (finalResults.length >= maxSolutions) break;
+                    const remaining = maxSolutions - finalResults.length;
+                    finalResults.push(...byLength[len].slice(0, remaining));
+                }
+                if (finalResults.length > 0 && !fixedTotalLength) {
+                    resultConditions.totalLength = finalResults[0].join('').length;
+                }
+            } else if (fixedTotalLength) {
+                finalResults = filterByTotalLength(baseResults, fixedTotalLength);
+            } else {
+                finalResults = baseResults;
             }
         }
 
-        // 3. 文字数一意性で絞り込む
-        if (searchUniqueWordLengths && finalResults.length > maxSolutions) {
-            const uniqueLengthResults = filterUniqueWordLengths(finalResults);
-            if (uniqueLengthResults.length > 0 && uniqueLengthResults.length <= maxSolutions) {
-                finalResults = uniqueLengthResults;
-                resultConditions.uniqueWordLengths = true;
-            }
-        }
-
-        // 4. 上限を超えていても最大maxSolutions件まで返す
         if (finalResults.length > maxSolutions) {
             finalResults = finalResults.slice(0, maxSolutions);
+        }
+
+        if (finalResults.length < minSolutions) {
+            return res.json({
+                results: finalResults,
+                conditions: resultConditions,
+                warning: `${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。${finalResults.length}個の結果を返します。`
+            });
         }
 
         const elapsed = Date.now() - startTime;
         console.log(`Auto generate completed in ${elapsed}ms (${finalResults.length} results)`);
 
-        return res.json({ 
+        return res.json({
             results: finalResults,
             conditions: resultConditions
         });
