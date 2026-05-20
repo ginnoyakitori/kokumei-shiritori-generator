@@ -400,7 +400,7 @@ class PriorityQueue {
 /**
  * 💡 最短「文字数」で到達するすべてのパスを探索 (ダイクストラ法)
  */
-function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode) {
+function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, requiredCharMode, advancedConditions) {
     const allWords = Object.values(wordMap).flat(); 
     let startingWords = firstChar ? (wordMap[firstChar] || []) : allWords;
     
@@ -463,7 +463,8 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                     
                   if (isNoSucceeding && 
                       checkRequiredChars(path, requiredChars, requiredCharMode) && 
-                      checkExcludeChars(path, excludeChars)) {
+                      checkExcludeChars(path, excludeChars) &&
+                      checkAdvancedConditions(path, wordMap, advancedConditions)) {
                       
                       if (currentLength < shortestLength) {
                           shortestLength = currentLength;
@@ -504,6 +505,7 @@ function findShiritoriShortestPath(wordMap, firstChar, lastChar, requiredChars, 
                     if (isNoSucceeding) {
                         // 必須文字/除外文字のチェック
                         if (checkRequiredChars(newPath, requiredChars, requiredCharMode) && checkExcludeChars(newPath, excludeChars)) {
+                            if (!checkAdvancedConditions(newPath, wordMap, advancedConditions)) continue;
                             
                             if (nextLength < shortestLength) {
                                 // 新しい最短パスを発見
@@ -797,7 +799,7 @@ loadWordData();
 
 // 文字指定しりとり検索 (最短パス実装 & 必須文字複数文字列対応)
 app.post('/api/shiritori', (req, res) => {
-    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode } = req.body;
+    let { listName, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, outputType, requiredCharMode, advancedConditions } = req.body;
     const words = wordLists[listName];
     const map = wordMap[listName];
 
@@ -835,7 +837,7 @@ app.post('/api/shiritori', (req, res) => {
         }
         try {
             // 🚨 文字数最短を検索するダイクストラ法ベースの関数を呼び出し 🚨
-            results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+            results = findShiritoriShortestPath(map, firstChar, lastChar, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode, advancedConditions);
             return res.json({ results });
         } catch (e) {
             console.error("Error in shortest path (Dijkstra) shiritori:", e);
@@ -850,6 +852,7 @@ app.post('/api/shiritori', (req, res) => {
         }
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        results = filterByAdvancedConditions(results, map, advancedConditions);
         
         const counts = {};
         results.forEach(path => {
@@ -884,6 +887,7 @@ app.post('/api/shiritori', (req, res) => {
         }
         
         results = findShiritoriCombinations(map, firstChar, lastChar, wordCount, requiredChars, excludeChars, noPrecedingWord, noSucceedingWord, mode);
+        results = filterByAdvancedConditions(results, map, advancedConditions);
         return res.json({ results });
     }
 });
@@ -891,7 +895,7 @@ app.post('/api/shiritori', (req, res) => {
 
 // 単語数指定しりとり (必須文字複数文字列対応)
 app.post('/api/word_count_shiritori', (req, res) => {
-    let { listName, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode } = req.body;
+    let { listName, wordCountPatterns, requiredChars, allowPermutation, requiredCharMode, advancedConditions } = req.body;
     const map = wordMap[listName];
 
     if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
@@ -911,7 +915,8 @@ app.post('/api/word_count_shiritori', (req, res) => {
 
 
     try {
-        const results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode);
+        let results = findShiritoriByWordCountPatterns(map, wordCountPatterns, requiredChars, allowPermutation, mode);
+        results = filterByAdvancedConditions(results, map, advancedConditions);
         return res.json({ results });
     } catch (e) {
         console.error("Error in word count shiritori:", e);
@@ -950,7 +955,7 @@ app.post('/api/substring_search', (req, res) => {
 
 // ？文字指定しりとり検索 (複数位置パターン・必須文字複数文字列対応)
 app.post('/api/wildcard_shiritori', (req, res) => {
-    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode } = req.body;
+    let { listName, wordPatterns, firstWordPattern, lastWordPattern, wordCount, requiredChars, requiredCharMode, advancedConditions } = req.body;
     const map = wordMap[listName];
 
     if (!map) {
@@ -979,7 +984,8 @@ app.post('/api/wildcard_shiritori', (req, res) => {
 
     const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
-    const results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode);
+    let results = findWildcardShiritoriCombinations(map, wordPatterns, requiredChars, mode);
+    results = filterByAdvancedConditions(results, map, advancedConditions);
     
     return res.json({ results });
 });
@@ -1053,7 +1059,7 @@ function findLoopShiritori(wordMap, pattern) {
 
 // 🚨 【追加】フロントエンドからのリクエストを受けるエンドポイント
 app.post('/api/loop_shiritori', (req, res) => {
-    const { listName, pattern } = req.body;
+    const { listName, pattern, advancedConditions } = req.body;
     const map = wordMap[listName];
     
     if (!map || !pattern) {
@@ -1061,7 +1067,8 @@ app.post('/api/loop_shiritori', (req, res) => {
     }
 
     try {
-        const results = findLoopShiritori(map, pattern);
+        let results = findLoopShiritori(map, pattern);
+        results = filterByAdvancedConditions(results, map, advancedConditions);
         res.json({ results });
     } catch (e) {
         console.error(e);

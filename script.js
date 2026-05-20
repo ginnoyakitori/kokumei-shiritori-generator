@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const applyConditionChat = document.getElementById('applyConditionChat');
     const applyConditionChatAndSearch = document.getElementById('applyConditionChatAndSearch');
     const conditionChatMessages = document.getElementById('conditionChatMessages');
+    let advancedConditions = {};
 
     const modeSections = {
         shiritori: document.getElementById('shiritoriMode'),
@@ -49,6 +50,44 @@ document.addEventListener('DOMContentLoaded', () => {
         .split(/[,・\s]+/)
         .map(item => item.replace(/[「」『』"'`]/g, '').trim())
         .filter(Boolean);
+
+    const normalizeNumberText = (value) => value.replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0));
+
+    const parseRuleOp = (text) => {
+        if (/以上|少なくとも/.test(text)) return 'min';
+        if (/以下|以内|まで|高々/.test(text)) return 'max';
+        return 'eq';
+    };
+
+    const parseNumberRule = (text, labelPattern) => {
+        const after = text.match(new RegExp(`(${labelPattern})[^0-9０-９]{0,10}([0-9０-９]+)\\s*(?:個|文字|つ|回|か国|国)?\\s*(以上|以下|以内|まで|少なくとも|高々)?`));
+        const before = text.match(new RegExp(`([0-9０-９]+)\\s*(?:個|文字|つ|回|か国|国)?\\s*(以上|以下|以内|まで|少なくとも|高々)?[^,。]{0,8}(${labelPattern})`));
+        const match = after || before;
+        if (!match) return null;
+        const numberText = after ? match[2] : match[1];
+        return {
+            op: parseRuleOp(match[0]),
+            value: parseInt(normalizeNumberText(numberText), 10)
+        };
+    };
+
+    const applyRuleIfFound = (target, key, text, labelPattern, applied, label) => {
+        const rule = parseNumberRule(text, labelPattern);
+        if (!rule || Number.isNaN(rule.value)) return;
+        target[key] = rule;
+        const opText = rule.op === 'min' ? '以上' : rule.op === 'max' ? '以下' : '';
+        applied.push(`${label}: ${rule.value}${opText}`);
+    };
+
+    const getAdvancedConditionsForRequest = () => (
+        Object.keys(advancedConditions).length > 0 ? advancedConditions : null
+    );
+
+    const parseBooleanCondition = (text, positiveRegex, negativeRegex) => {
+        if (negativeRegex.test(text)) return false;
+        if (positiveRegex.test(text)) return true;
+        return null;
+    };
 
     const pickConditionValue = (text, labels) => {
         for (const label of labels) {
@@ -113,6 +152,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return { applied: [], mode: modeSelect.value };
 
         const applied = [];
+        if (/リセット|クリア|解除/.test(text)) {
+            advancedConditions = {};
+            applied.push('複雑条件: クリア');
+        } else if (!/さらに|追加|加えて|その上/.test(text)) {
+            advancedConditions = {};
+        }
         let selectedMode = modeSelect.value;
 
         const listRules = [
@@ -230,6 +275,55 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (/経路|一覧|すべて|全部/.test(text)) {
             setOutputType('path');
             applied.push('出力: 経路表示');
+        }
+
+        const hasCombinedVoicedRule = /濁音半濁音|濁音・半濁音|濁音と半濁音/.test(text);
+        if (!hasCombinedVoicedRule) {
+            applyRuleIfFound(advancedConditions, 'dakutenCount', text, '濁音|濁点', applied, '濁音数');
+            applyRuleIfFound(advancedConditions, 'handakutenCount', text, '半濁音|半濁点', applied, '半濁音数');
+        }
+        applyRuleIfFound(advancedConditions, 'voicedKanaCount', text, '濁音半濁音|濁音・半濁音|濁音と半濁音', applied, '濁音・半濁音数');
+        applyRuleIfFound(advancedConditions, 'smallKanaCount', text, '小さい文字|小文字|小書き文字|拗音|促音', applied, '小さい文字数');
+        applyRuleIfFound(advancedConditions, 'repeatedCharWordCount', text, '同じ文字を複数回使う(?:国|単語|国名)?|重複文字(?:のある)?(?:国|単語|国名)?', applied, '同じ文字を複数回使う語数');
+
+        const firstPredecessor = parseBooleanCondition(
+            text,
+            /最初(?:の国名|の単語|の語)?の?前(?:に|へ)?(?:続けられる|つながる|接続できる).*(?:ある|あり|有り)/,
+            /最初(?:の国名|の単語|の語)?の?前(?:に|へ)?(?:続けられる|つながる|接続できる).*(?:ない|なし|無し)/
+        );
+        if (firstPredecessor !== null) {
+            advancedConditions.firstHasPredecessor = firstPredecessor;
+            applied.push(`最初の語の前: ${firstPredecessor ? '続けられる語あり' : '続けられる語なし'}`);
+        }
+
+        const lastSuccessor = parseBooleanCondition(
+            text,
+            /最後(?:の国名|の単語|の語)?の?後(?:に|へ)?(?:続けられる|つながる|接続できる).*(?:ある|あり|有り)/,
+            /最後(?:の国名|の単語|の語)?の?後(?:に|へ)?(?:続けられる|つながる|接続できる).*(?:ない|なし|無し)/
+        );
+        if (lastSuccessor !== null) {
+            advancedConditions.lastHasSuccessor = lastSuccessor;
+            applied.push(`最後の語の後: ${lastSuccessor ? '続けられる語あり' : '続けられる語なし'}`);
+        }
+
+        if (/文字数.*(?:単調増加|狭義増加)|(?:単調増加|狭義増加).*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'increasing';
+            applied.push('文字数: 単調増加');
+        } else if (/文字数.*(?:単調減少|狭義減少)|(?:単調減少|狭義減少).*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'decreasing';
+            applied.push('文字数: 単調減少');
+        } else if (/文字数.*(?:非減少|広義増加)|(?:非減少|広義増加).*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'nondecreasing';
+            applied.push('文字数: 非減少');
+        } else if (/文字数.*(?:非増加|広義減少)|(?:非増加|広義減少).*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'nonincreasing';
+            applied.push('文字数: 非増加');
+        } else if (/文字数.*等差数列|等差数列.*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'arithmetic';
+            applied.push('文字数: 等差数列');
+        } else if (/文字数.*等比数列|等比数列.*文字数/.test(text)) {
+            advancedConditions.lengthPattern = 'geometric';
+            applied.push('文字数: 等比数列');
         }
 
         return { applied, mode: selectedMode };
@@ -358,7 +452,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
                         excludeChars: getVal('excludeChars').trim(),
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
-                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
+                        advancedConditions: getAdvancedConditionsForRequest()
                     };
                 } else if (mode === 'wildcardShiritori') {
                     apiPath = '/api/wildcard_shiritori';
@@ -373,7 +468,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         listName: commonListName,
                         wordPatterns: patterns,
                         requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
-                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast'
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
+                        advancedConditions: getAdvancedConditionsForRequest()
                     };
 
                 } else if (mode === 'wordCountShiritori') {
@@ -385,12 +481,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     requestBody = {
                         listName: commonListName,
                         wordCountPatterns: patterns,
-                        allowPermutation: getChecked('allowWordCountPermutation')
+                        allowPermutation: getChecked('allowWordCountPermutation'),
+                        advancedConditions: getAdvancedConditionsForRequest()
                     };
 
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
-                    requestBody = { listName: commonListName, pattern: getVal('loopPattern').trim() };
+                    requestBody = {
+                        listName: commonListName,
+                        pattern: getVal('loopPattern').trim(),
+                        advancedConditions: getAdvancedConditionsForRequest()
+                    };
 
                 } else if (mode === 'wildcard') {
                     apiPath = '/api/wildcard_search';
