@@ -1,14 +1,13 @@
 /**
- * 自動生成モード
- * 解の個数範囲（最小～最大）を指定し、各条件のモード（設定しない/設定する/自動で設定）に応じて
- * しりとりの条件を自動調整
+ * 自動生成モード（改善版）
+ * 解の個数の範囲を指定して、条件を自動で調整
  */
 app.post('/api/auto_generate', (req, res) => {
     let { 
         listName, 
         minSolutions, 
         maxSolutions,
-        firstCharMode,
+        firstCharMode, 
         firstChar,
         lastCharMode,
         lastChar,
@@ -36,88 +35,38 @@ app.post('/api/auto_generate', (req, res) => {
         return res.status(400).json({ error: '解の範囲を正しく指定してください（最小 ≤ 最大）。' });
     }
 
+    if (!wordCount || wordCount < 1) {
+        return res.status(400).json({ error: '単語数は1以上である必要があります。' });
+    }
+
     const startTime = Date.now();
 
     try {
-        // 記録用の条件情報
+        // === 固定条件の確定 ===
+        let fixedFirstChar = firstCharMode === 'fixed' ? (firstChar?.trim() || null) : null;
+        let fixedLastChar = lastCharMode === 'fixed' ? (lastChar?.trim() || null) : null;
+        const fixedWordCount = wordCountMode === 'fixed' ? parseInt(wordCount, 10) : null;
+        const fixedIncludeChars = includeCharsMode === 'fixed' ? includeChars : null;
+        const fixedExcludeChars = excludeCharsMode === 'fixed' ? excludeChars : null;
+        let fixedTotalLength = totalLengthMode === 'fixed' ? parseInt(totalLength, 10) : null;
+
         const resultConditions = {};
-        
-        // === 条件の処理 ===
-        let fixedFirstChar = null;
-        let fixedLastChar = null;
-        let fixedWordCount = null;
-        let fixedIncludeChars = null;
-        let fixedExcludeChars = null;
-        let fixedTotalLength = null;
-
-        // 開始文字
-        if (firstCharMode === 'fixed' && firstChar) {
-            fixedFirstChar = firstChar.trim();
-            resultConditions.firstChar = fixedFirstChar;
-        } else if (firstCharMode !== 'none') {
-            resultConditions.firstChar = '（自動調整）';
-        }
-
-        // 終了文字
-        if (lastCharMode === 'fixed' && lastChar) {
-            fixedLastChar = lastChar.trim();
-            resultConditions.lastChar = fixedLastChar;
-        } else if (lastCharMode !== 'none') {
-            resultConditions.lastChar = '（自動調整）';
-        }
-
-        // 単語数
-        if (wordCountMode === 'fixed' && wordCount) {
-            fixedWordCount = parseInt(wordCount, 10);
-            if (fixedWordCount < 1) {
-                return res.status(400).json({ error: '単語数は1以上である必要があります。' });
-            }
-            resultConditions.wordCount = fixedWordCount;
-        } else if (wordCountMode !== 'none') {
-            resultConditions.wordCount = '（自動調整）';
-        }
-
-        // 含める文字
-        if (includeCharsMode === 'fixed' && includeChars && includeChars.length > 0) {
-            fixedIncludeChars = includeChars;
-            resultConditions.includeChars = includeChars.join(',');
-        } else if (includeCharsMode !== 'none') {
-            resultConditions.includeChars = '（自動調整）';
-        }
-
-        // 除外する文字
-        if (excludeCharsMode === 'fixed' && excludeChars && excludeChars.length > 0) {
-            fixedExcludeChars = excludeChars;
-            resultConditions.excludeChars = excludeChars.join(',');
-        } else if (excludeCharsMode !== 'none') {
-            resultConditions.excludeChars = '（自動調整）';
-        }
-
-        // 合計文字数
-        if (totalLengthMode === 'fixed' && totalLength) {
-            fixedTotalLength = parseInt(totalLength, 10);
-            if (fixedTotalLength < 1) {
-                return res.status(400).json({ error: '合計文字数は1以上である必要があります。' });
-            }
-            resultConditions.totalLength = fixedTotalLength;
-        } else if (totalLengthMode !== 'none') {
-            resultConditions.totalLength = '（自動調整）';
-        }
-
-        resultConditions.uniqueWordLengths = uniqueWordLengths ? 'あり' : 'なし';
-
         let finalResults = [];
 
-        // === wordCountMode が 'none' の場合：複数の単語数を試す ===
-        if (wordCountMode === 'none' || !fixedWordCount) {
-            for (let tryWordCount = 2; tryWordCount <= 6; tryWordCount++) {
-                if (finalResults.length >= maxSolutions) break;
+        // === ステップ1：開始文字が「自動」の場合、最適な開始文字を見つける ===
+        if (firstCharMode === 'auto') {
+            const allWords = Object.values(map).flat();
+            const uniqueFirstChars = [...new Set(allWords.map(normalizeWord))];
+            
+            let bestFirstChar = null;
+            let bestResults = [];
 
+            for (const tryFirstChar of uniqueFirstChars) {
                 let candidateResults = findShiritoriCombinations(
                     map,
-                    fixedFirstChar,
+                    tryFirstChar,
                     fixedLastChar,
-                    tryWordCount,
+                    fixedWordCount || parseInt(wordCount, 10),
                     fixedIncludeChars,
                     fixedExcludeChars,
                     false,
@@ -126,43 +75,89 @@ app.post('/api/auto_generate', (req, res) => {
                     listName
                 );
 
-                // フィルタリング
                 if (uniqueWordLengths) {
                     candidateResults = filterUniqueWordLengths(candidateResults);
                 }
 
-                if (fixedTotalLength) {
-                    candidateResults = filterByTotalLength(candidateResults, fixedTotalLength);
-                }
-
-                // 合計文字数で自動調整する場合
-                if (totalLengthMode === 'auto' && candidateResults.length > 0) {
-                    const byLength = {};
-                    candidateResults.forEach(path => {
-                        const totalLen = path.join('').length;
-                        if (!byLength[totalLen]) byLength[totalLen] = [];
-                        byLength[totalLen].push(path);
-                    });
-                    const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
-                    for (const len of sortedLengths) {
-                        if (finalResults.length >= maxSolutions) break;
-                        const remaining = maxSolutions - finalResults.length;
-                        finalResults.push(...byLength[len].slice(0, remaining));
-                    }
-                    if (finalResults.length > 0 && !fixedTotalLength) {
-                        resultConditions.totalLength = finalResults[0].join('').length;
-                    }
-                } else {
-                    finalResults.push(...candidateResults.slice(0, maxSolutions - finalResults.length));
+                // 範囲内か確認
+                if (candidateResults.length >= minSolutions && candidateResults.length <= maxSolutions) {
+                    bestFirstChar = tryFirstChar;
+                    bestResults = candidateResults.slice(0, maxSolutions);
+                    break;
                 }
             }
+
+            if (bestFirstChar) {
+                fixedFirstChar = bestFirstChar;
+                finalResults = bestResults;
+                resultConditions.firstChar = bestFirstChar;
+            } else {
+                return res.json({
+                    results: [],
+                    conditions: resultConditions,
+                    message: `開始文字を「自動」で設定した場合、${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。`
+                });
+            }
         } else {
-            // === wordCountMode が 'fixed' の場合 ===
-            let baseResults = findShiritoriCombinations(
+            resultConditions.firstChar = fixedFirstChar || '（指定なし）';
+        }
+
+        // === ステップ2：終了文字が「自動」の場合、最適な終了文字を見つける ===
+        if (lastCharMode === 'auto') {
+            const allWords = Object.values(map).flat();
+            const uniqueLastChars = [...new Set(allWords.map(getShiritoriLastChar))];
+            
+            let bestLastChar = null;
+            let bestResults = [];
+
+            for (const tryLastChar of uniqueLastChars) {
+                let candidateResults = findShiritoriCombinations(
+                    map,
+                    fixedFirstChar,
+                    tryLastChar,
+                    fixedWordCount || parseInt(wordCount, 10),
+                    fixedIncludeChars,
+                    fixedExcludeChars,
+                    false,
+                    false,
+                    'atLeast',
+                    listName
+                );
+
+                if (uniqueWordLengths) {
+                    candidateResults = filterUniqueWordLengths(candidateResults);
+                }
+
+                // 範囲内か確認
+                if (candidateResults.length >= minSolutions && candidateResults.length <= maxSolutions) {
+                    bestLastChar = tryLastChar;
+                    bestResults = candidateResults.slice(0, maxSolutions);
+                    break;
+                }
+            }
+
+            if (bestLastChar) {
+                fixedLastChar = bestLastChar;
+                finalResults = bestResults;
+                resultConditions.lastChar = bestLastChar;
+            } else {
+                return res.json({
+                    results: [],
+                    conditions: resultConditions,
+                    message: `終了文字を「自動」で設定した場合、${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。`
+                });
+            }
+        } else {
+            resultConditions.lastChar = fixedLastChar || '（指定なし）';
+        }
+
+        // === ステップ3：開始文字と終了文字が両方固定された時点で検索 ===
+        if (finalResults.length === 0) {
+            finalResults = findShiritoriCombinations(
                 map,
                 fixedFirstChar,
                 fixedLastChar,
-                fixedWordCount,
+                fixedWordCount || parseInt(wordCount, 10),
                 fixedIncludeChars,
                 fixedExcludeChars,
                 false,
@@ -171,108 +166,57 @@ app.post('/api/auto_generate', (req, res) => {
                 listName
             );
 
-            // フィルタリング
             if (uniqueWordLengths) {
-                baseResults = filterUniqueWordLengths(baseResults);
-            }
-
-            // 開始文字を自動調整する場合
-            if (firstCharMode === 'auto' && baseResults.length > 0 && baseResults.length < minSolutions) {
-                baseResults = [];
-                const allWords = Object.values(map).flat();
-                const uniqueFirstChars = [...new Set(allWords.map(normalizeWord))];
-                
-                for (const tryFirstChar of uniqueFirstChars) {
-                    if (baseResults.length >= maxSolutions) break;
-                    let candidateResults = findShiritoriCombinations(
-                        map,
-                        tryFirstChar,
-                        fixedLastChar,
-                        fixedWordCount,
-                        fixedIncludeChars,
-                        fixedExcludeChars,
-                        false,
-                        false,
-                        'atLeast',
-                        listName
-                    );
-                    if (uniqueWordLengths) {
-                        candidateResults = filterUniqueWordLengths(candidateResults);
-                    }
-                    baseResults.push(...candidateResults.slice(0, maxSolutions - baseResults.length));
-                }
-                if (baseResults.length > 0 && !fixedFirstChar) {
-                    resultConditions.firstChar = normalizeWord(baseResults[0][0]);
-                }
-            }
-
-            // 終了文字を自動調整する場合
-            if (lastCharMode === 'auto' && baseResults.length > 0 && baseResults.length < minSolutions) {
-                baseResults = [];
-                const allWords = Object.values(map).flat();
-                const uniqueLastChars = [...new Set(allWords.map(getShiritoriLastChar))];
-                
-                for (const tryLastChar of uniqueLastChars) {
-                    if (baseResults.length >= maxSolutions) break;
-                    let candidateResults = findShiritoriCombinations(
-                        map,
-                        fixedFirstChar,
-                        tryLastChar,
-                        fixedWordCount,
-                        fixedIncludeChars,
-                        fixedExcludeChars,
-                        false,
-                        false,
-                        'atLeast',
-                        listName
-                    );
-                    if (uniqueWordLengths) {
-                        candidateResults = filterUniqueWordLengths(candidateResults);
-                    }
-                    baseResults.push(...candidateResults.slice(0, maxSolutions - baseResults.length));
-                }
-                if (baseResults.length > 0 && !fixedLastChar) {
-                    resultConditions.lastChar = getShiritoriLastChar(baseResults[0][baseResults[0].length - 1]);
-                }
-            }
-
-            // 合計文字数で自動調整する場合
-            if (totalLengthMode === 'auto' && baseResults.length > maxSolutions) {
-                const byLength = {};
-                baseResults.forEach(path => {
-                    const totalLen = path.join('').length;
-                    if (!byLength[totalLen]) byLength[totalLen] = [];
-                    byLength[totalLen].push(path);
-                });
-                const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
-                finalResults = [];
-                for (const len of sortedLengths) {
-                    if (finalResults.length >= maxSolutions) break;
-                    const remaining = maxSolutions - finalResults.length;
-                    finalResults.push(...byLength[len].slice(0, remaining));
-                }
-                if (finalResults.length > 0 && !fixedTotalLength) {
-                    resultConditions.totalLength = finalResults[0].join('').length;
-                }
-            } else if (fixedTotalLength) {
-                finalResults = filterByTotalLength(baseResults, fixedTotalLength);
-            } else {
-                finalResults = baseResults;
+                finalResults = filterUniqueWordLengths(finalResults);
             }
         }
 
-        // 範囲内に収める
-        if (finalResults.length > maxSolutions) {
-            finalResults = finalResults.slice(0, maxSolutions);
+        resultConditions.wordCount = fixedWordCount || parseInt(wordCount, 10);
+        resultConditions.includeChars = fixedIncludeChars ? fixedIncludeChars.join(',') : '（指定なし）';
+        resultConditions.excludeChars = fixedExcludeChars ? fixedExcludeChars.join(',') : '（指定なし）';
+
+        // === ステップ4：合計文字数で自動調整 ===
+        if (totalLengthMode === 'auto' && finalResults.length > maxSolutions) {
+            const byLength = {};
+            finalResults.forEach(path => {
+                const totalLen = path.join('').length;
+                if (!byLength[totalLen]) {
+                    byLength[totalLen] = [];
+                }
+                byLength[totalLen].push(path);
+            });
+
+            const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
+            finalResults = [];
+            for (const len of sortedLengths) {
+                if (finalResults.length >= maxSolutions) break;
+                const remaining = maxSolutions - finalResults.length;
+                finalResults = finalResults.concat(byLength[len].slice(0, remaining));
+            }
+
+            if (finalResults.length > 0) {
+                fixedTotalLength = finalResults[0].join('').length;
+                resultConditions.totalLength = fixedTotalLength;
+            }
+        } else if (fixedTotalLength) {
+            finalResults = filterByTotalLength(finalResults, fixedTotalLength);
+            resultConditions.totalLength = fixedTotalLength;
+        } else {
+            resultConditions.totalLength = '（指定なし）';
         }
 
-        // 最小値未満の場合はメッセージを返す
+        // === ステップ5：解の個数が範囲内か確認 ===
         if (finalResults.length < minSolutions) {
             return res.json({
-                results: finalResults,
+                results: [],
                 conditions: resultConditions,
-                warning: `${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。${finalResults.length}個の結果を返します。`
+                message: `解の個数が範囲外です。最小${minSolutions}個必要ですが、${finalResults.length}個しか見つかりませんでした。`
             });
+        }
+
+        // 上限を超えた場合はカット
+        if (finalResults.length > maxSolutions) {
+            finalResults = finalResults.slice(0, maxSolutions);
         }
 
         const elapsed = Date.now() - startTime;
