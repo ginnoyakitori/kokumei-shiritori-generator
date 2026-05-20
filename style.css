@@ -29,6 +29,65 @@ h1 {
     margin-bottom: 0.5em;
 }
 
+.condition-chat {
+    margin-bottom: 16px;
+    padding: 14px;
+    border: 1px solid #d9e1ec;
+    border-radius: 8px;
+    background-color: #f7fafc;
+}
+
+.condition-chat-messages {
+    max-height: 150px;
+    overflow-y: auto;
+    margin: 8px 0 10px;
+    padding: 10px;
+    border: 1px solid #dce5ef;
+    border-radius: 6px;
+    background-color: #fff;
+}
+
+.chat-message {
+    width: fit-content;
+    max-width: 82%;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.chat-message.assistant {
+    background-color: #eef4fb;
+    color: #32465a;
+}
+
+.chat-message.user {
+    margin-left: auto;
+    background-color: #4CAF50;
+    color: white;
+}
+
+.condition-chat-input-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+}
+
+.condition-chat-input-row button {
+    padding: 10px 14px;
+    border: none;
+    border-radius: 5px;
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.condition-chat-input-row button:hover {
+    background-color: #0056b3;
+}
+
 .mode-selector {
     margin-bottom: 20px;
     text-align: center;
@@ -315,6 +374,9 @@ select {
     .radio-group label {
         width: 100%;
         text-align: center;
+    }
+    .condition-chat-input-row {
+        grid-template-columns: 1fr;
     }
 }
 

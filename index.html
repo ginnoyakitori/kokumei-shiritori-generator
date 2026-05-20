@@ -14,6 +14,18 @@
     </header>
 
     <section class="common-settings">
+        <div class="condition-chat">
+            <label for="conditionChatInput">条件チャット</label>
+            <div id="conditionChatMessages" class="condition-chat-messages">
+                <div class="chat-message assistant">例: 国名で「ア」から始まり「ン」で終わる3単語、必須「ス」、除外「ワ」</div>
+            </div>
+            <div class="condition-chat-input-row">
+                <input type="text" id="conditionChatInput" placeholder="条件を文章で入力">
+                <button type="button" id="applyConditionChat">反映</button>
+                <button type="button" id="applyConditionChatAndSearch">反映して検索</button>
+            </div>
+        </div>
+
         <div class="form-group">
             <label for="listName">使用する単語リスト:</label>
             <select id="listName">
@@ -75,30 +87,16 @@
                 </div>
             </div>
             <div class="form-group">
-                <label>合計文字数</label>
-                <input type="number" id="shiritoriTotalLength" placeholder="例: 15" min="1">
-            </div>
-            <div class="form-group">
                 <label>出力オプション</label>
                 <div class="radio-group">
                     <input type="radio" id="outputPath" name="outputType" value="path" checked>
                     <label for="outputPath">経路表示（すべて表示）</label>
+                    <br>
                     <input type="radio" id="outputFirstCount" name="outputType" value="firstCharCount">
                     <label for="outputFirstCount">開始文字別集計</label>
+                    <br>
                     <input type="radio" id="outputLastCount" name="outputType" value="lastCharCount">
                     <label for="outputLastCount">終了文字別集計</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="uniqueWordLengths">
-                    <label for="uniqueWordLengths">単語の文字数がすべて異なる経路のみ表示</label>
-                </div>
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="uniquePairOnly">
-                    <label for="uniquePairOnly">最初と最後の文字の組み合わせが唯一の経路のみ表示</label>
                 </div>
             </div>
             <button class="search-btn primary">しりとり経路を検索</button>
@@ -118,10 +116,6 @@
                 <label>最後の単語パターン:</label>
                 <input type="text" id="lastWordPattern" class="word-pattern-input" placeholder="例: ロ？ア">
             </div>
-            <div class="form-group">
-                <label>合計文字数</label>
-                <input type="number" id="wildcardTotalLength" placeholder="例: 15" min="1">
-            </div>
             <button class="search-btn primary">指定パターンで検索</button>
         </div>
 
@@ -138,24 +132,12 @@
                 <input type="checkbox" id="allowWordCountPermutation">
                 <label for="allowWordCountPermutation">並び替えを許可（例: 2,3 でも 3,2 でもOK）</label>
             </div>
-            <div class="checkbox-group" style="margin-top:10px;">
-                <input type="checkbox" id="uniqueWordLengthsWordCount">
-                <label for="uniqueWordLengthsWordCount">単語の文字数がすべて異なる経路のみ表示</label>
-            </div>
-            <div class="form-group">
-                <label>合計文字数</label>
-                <input type="number" id="wordCountTotalLength" placeholder="例: 15" min="1">
-            </div>
             <button class="search-btn primary">検索実行</button>
         </div>
 
         <div id="loopMode" class="mode-section">
             <h2>ループ検索</h2>
             <input type="text" id="loopPattern" placeholder="例: ？？？？ゴ？？ト">
-            <div class="form-group">
-                <label>合計文字数</label>
-                <input type="number" id="loopTotalLength" placeholder="例: 20" min="1">
-            </div>
             <button class="search-btn primary">ループを見つける</button>
         </div>
 
