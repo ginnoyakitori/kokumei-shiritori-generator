@@ -533,11 +533,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const clearAdvancedButton = document.getElementById('clearAdvancedConditionsBtn');
-    if (clearAdvancedButton) {
-        clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
-    }
-
     const parseAdvancedConditionRule = (modeId, valueId) => {
         const mode = document.getElementById(modeId)?.value;
         const value = document.getElementById(valueId)?.value;
@@ -648,6 +643,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chatAdvancedConditions = {};
         clearAdvancedConditionsFields();
     };
+
+    const clearAdvancedButton = document.getElementById('clearAdvancedConditionsBtn');
+    if (clearAdvancedButton) {
+        clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
+    }
 
     // --- 4. 検索実行メインロジック ---
     searchButtons.forEach(button => {
