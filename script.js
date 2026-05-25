@@ -428,11 +428,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const applyConditionsToCurrentMode = (parsed) => {
         if (parsed.advancedConditions?.clear) {
             chatAdvancedConditions = {};
+            clearAdvancedConditionsFields();
         } else if (parsed.advancedConditions && Object.keys(parsed.advancedConditions).length > 0) {
             chatAdvancedConditions = {
                 ...chatAdvancedConditions,
                 ...parsed.advancedConditions
             };
+            setAdvancedConditionsFields(parsed.advancedConditions);
         }
 
         if (parsed.mode && modeSections[parsed.mode]) {
@@ -528,11 +530,120 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const getAdvancedConditionsForRequest = () => {
-        if (!chatAdvancedConditions || Object.keys(chatAdvancedConditions).length === 0) {
+    const clearAdvancedButton = document.getElementById('clearAdvancedConditionsBtn');
+    if (clearAdvancedButton) {
+        clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
+    }
+
+    const parseAdvancedConditionRule = (modeId, valueId) => {
+        const mode = document.getElementById(modeId)?.value;
+        const value = document.getElementById(valueId)?.value;
+        const numeric = parseInt(value, 10);
+        if (!mode || mode === '' || Number.isNaN(numeric)) {
             return null;
         }
-        return { ...chatAdvancedConditions };
+        return { mode, value: numeric };
+    };
+
+    const getExplicitAdvancedConditions = () => {
+        const advanced = {};
+        const dakuten = parseAdvancedConditionRule('dakutenCountMode', 'dakutenCountValue');
+        if (dakuten) advanced.dakutenCount = dakuten;
+
+        const handakuten = parseAdvancedConditionRule('handakutenCountMode', 'handakutenCountValue');
+        if (handakuten) advanced.handakutenCount = handakuten;
+
+        const smallKana = parseAdvancedConditionRule('smallKanaCountMode', 'smallKanaCountValue');
+        if (smallKana) advanced.smallKanaCount = smallKana;
+
+        const repeated = parseAdvancedConditionRule('repeatedCharWordCountMode', 'repeatedCharWordCountValue');
+        if (repeated) advanced.repeatedCharWordCount = repeated;
+
+        const preceding = document.getElementById('hasPrecedingWord')?.value;
+        if (preceding === 'true') advanced.hasPrecedingWord = true;
+        if (preceding === 'false') advanced.hasPrecedingWord = false;
+
+        const succeeding = document.getElementById('hasSucceedingWord')?.value;
+        if (succeeding === 'true') advanced.hasSucceedingWord = true;
+        if (succeeding === 'false') advanced.hasSucceedingWord = false;
+
+        const pattern = document.getElementById('lengthPattern')?.value;
+        if (pattern) advanced.lengthPattern = pattern;
+
+        return advanced;
+    };
+
+    const clearAdvancedConditionsFields = () => {
+        setVal('dakutenCountMode', '');
+        setVal('dakutenCountValue', '');
+        setVal('handakutenCountMode', '');
+        setVal('handakutenCountValue', '');
+        setVal('smallKanaCountMode', '');
+        setVal('smallKanaCountValue', '');
+        setVal('repeatedCharWordCountMode', '');
+        setVal('repeatedCharWordCountValue', '');
+        setVal('hasPrecedingWord', '');
+        setVal('hasSucceedingWord', '');
+        setVal('lengthPattern', '');
+    };
+
+    const setAdvancedConditionsFields = (advanced) => {
+        if (!advanced) return;
+        if (advanced.clear) {
+            clearAdvancedConditionsFields();
+            return;
+        }
+
+        if (advanced.dakutenCount) {
+            setVal('dakutenCountMode', advanced.dakutenCount.mode);
+            setVal('dakutenCountValue', advanced.dakutenCount.value);
+        }
+        if (advanced.handakutenCount) {
+            setVal('handakutenCountMode', advanced.handakutenCount.mode);
+            setVal('handakutenCountValue', advanced.handakutenCount.value);
+        }
+        if (advanced.smallKanaCount) {
+            setVal('smallKanaCountMode', advanced.smallKanaCount.mode);
+            setVal('smallKanaCountValue', advanced.smallKanaCount.value);
+        }
+        if (advanced.repeatedCharWordCount) {
+            setVal('repeatedCharWordCountMode', advanced.repeatedCharWordCount.mode);
+            setVal('repeatedCharWordCountValue', advanced.repeatedCharWordCount.value);
+        }
+        if (advanced.hasPrecedingWord !== undefined) {
+            setVal('hasPrecedingWord', String(advanced.hasPrecedingWord));
+        }
+        if (advanced.hasSucceedingWord !== undefined) {
+            setVal('hasSucceedingWord', String(advanced.hasSucceedingWord));
+        }
+        if (advanced.lengthPattern) {
+            setVal('lengthPattern', advanced.lengthPattern);
+        }
+    };
+
+    const getAdvancedConditionsForRequest = () => {
+        const explicit = getExplicitAdvancedConditions();
+        const explicitKeys = Object.keys(explicit);
+        const chatKeys = Object.keys(chatAdvancedConditions || {});
+
+        if (chatKeys.length === 0 && explicitKeys.length === 0) {
+            return null;
+        }
+
+        if (chatKeys.length === 0) {
+            return explicit;
+        }
+
+        if (explicitKeys.length === 0) {
+            return { ...chatAdvancedConditions };
+        }
+
+        return { ...chatAdvancedConditions, ...explicit };
+    };
+
+    const handleClearAdvancedConditions = () => {
+        chatAdvancedConditions = {};
+        clearAdvancedConditionsFields();
     };
 
     // --- 4. 検索実行メインロジック ---

@@ -53,6 +53,87 @@
         </div>
     </section>
 
+    <section class="advanced-settings" aria-labelledby="advancedConditionsTitle">
+        <h2 id="advancedConditionsTitle">高度条件</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="dakutenCountMode">濁音数</label>
+                <select id="dakutenCountMode">
+                    <option value="">指定なし</option>
+                    <option value="exact">ちょうど</option>
+                    <option value="min">以上</option>
+                    <option value="max">以下</option>
+                </select>
+                <input type="number" id="dakutenCountValue" min="0" placeholder="個" style="margin-top:5px;">
+            </div>
+            <div class="form-group">
+                <label for="handakutenCountMode">半濁音数</label>
+                <select id="handakutenCountMode">
+                    <option value="">指定なし</option>
+                    <option value="exact">ちょうど</option>
+                    <option value="min">以上</option>
+                    <option value="max">以下</option>
+                </select>
+                <input type="number" id="handakutenCountValue" min="0" placeholder="個" style="margin-top:5px;">
+            </div>
+            <div class="form-group">
+                <label for="smallKanaCountMode">小さい文字数</label>
+                <select id="smallKanaCountMode">
+                    <option value="">指定なし</option>
+                    <option value="exact">ちょうど</option>
+                    <option value="min">以上</option>
+                    <option value="max">以下</option>
+                </select>
+                <input type="number" id="smallKanaCountValue" min="0" placeholder="個" style="margin-top:5px;">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="repeatedCharWordCountMode">重複文字あり単語数</label>
+                <select id="repeatedCharWordCountMode">
+                    <option value="">指定なし</option>
+                    <option value="exact">ちょうど</option>
+                    <option value="min">以上</option>
+                    <option value="max">以下</option>
+                </select>
+                <input type="number" id="repeatedCharWordCountValue" min="0" placeholder="個" style="margin-top:5px;">
+            </div>
+            <div class="form-group">
+                <label for="hasPrecedingWord">前に続けられる単語</label>
+                <select id="hasPrecedingWord">
+                    <option value="">指定なし</option>
+                    <option value="true">あり</option>
+                    <option value="false">なし</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="hasSucceedingWord">後に続けられる単語</label>
+                <select id="hasSucceedingWord">
+                    <option value="">指定なし</option>
+                    <option value="true">あり</option>
+                    <option value="false">なし</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="lengthPattern">文字数列パターン</label>
+                <select id="lengthPattern">
+                    <option value="">指定なし</option>
+                    <option value="increasing">単調増加</option>
+                    <option value="nondecreasing">広義増加</option>
+                    <option value="decreasing">単調減少</option>
+                    <option value="nonincreasing">広義減少</option>
+                    <option value="arithmetic">等差数列</option>
+                    <option value="geometric">等比数列</option>
+                </select>
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <button type="button" id="clearAdvancedConditionsBtn" class="secondary">高度条件をリセット</button>
+            </div>
+        </div>
+    </section>
+
     <hr>
 
     <main>
