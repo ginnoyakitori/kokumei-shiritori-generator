@@ -465,14 +465,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentMode === 'shiritori') {
             if (parsed.firstChar) setVal('firstChar', parsed.firstChar);
             if (parsed.lastChar) setVal('lastChar', parsed.lastChar);
+            const container = document.getElementById('wordCountInputContainer');
             if (parsed.wordCountType === 'shortest') {
                 setVal('wordCountType', 'shortest');
-                const container = document.getElementById('wordCountInputContainer');
                 if (container) container.style.display = 'none';
-                } else if (parsed.wordCountType === 'none') {
-                    setVal('wordCountType', 'none');
-                    const container = document.getElementById('wordCountInputContainer');
-                    if (container) container.style.display = 'none';
+            } else if (parsed.wordCountType === 'none') {
+                setVal('wordCountType', 'none');
+                if (container) container.style.display = 'none';
+            } else if (parsed.wordCount) {
+                setVal('wordCountType', 'fixed');
+                setVal('wordCount', parsed.wordCount);
+                if (container) container.style.display = 'block';
+            }
+            if (parsed.totalLength) setVal('shiritoriTotalLength', parsed.totalLength);
             if (parsed.includeChars?.length) setVal('includeChars', parsed.includeChars.join(','));
             if (parsed.excludeChars?.length) setVal('excludeChars', parsed.excludeChars.join(','));
             if (parsed.uniqueWordLengths) setChecked('uniqueWordLengths', true);
