@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (wordCountTypeSelect) {
         wordCountTypeSelect.addEventListener('change', (e) => {
             const container = document.getElementById('wordCountInputContainer');
-            if (container) container.style.display = (e.target.value === 'shortest') ? 'none' : 'block';
+            if (container) container.style.display = (e.target.value === 'fixed') ? 'block' : 'none';
         });
     }
 
@@ -398,6 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (parsed.lastChar) labels.push(`終了文字: ${parsed.lastChar}`);
         if (parsed.wordCount) labels.push(`単語数: ${parsed.wordCount}`);
         if (parsed.wordCountType === 'shortest') labels.push('単語数: 最短');
+        if (parsed.wordCountType === 'none') labels.push('単語数: 指定しない');
         if (parsed.totalLength) labels.push(`合計文字数: ${parsed.totalLength}`);
         if (parsed.includeChars?.length) labels.push(`含める文字: ${parsed.includeChars.join(', ')}`);
         if (parsed.excludeChars?.length) labels.push(`除外文字: ${parsed.excludeChars.join(', ')}`);
@@ -468,13 +469,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 setVal('wordCountType', 'shortest');
                 const container = document.getElementById('wordCountInputContainer');
                 if (container) container.style.display = 'none';
-            } else if (parsed.wordCount) {
-                setVal('wordCountType', 'fixed');
-                setVal('wordCount', parsed.wordCount);
-                const container = document.getElementById('wordCountInputContainer');
-                if (container) container.style.display = 'block';
-            }
-            if (parsed.totalLength) setVal('shiritoriTotalLength', parsed.totalLength);
+                } else if (parsed.wordCountType === 'none') {
+                    setVal('wordCountType', 'none');
+                    const container = document.getElementById('wordCountInputContainer');
+                    if (container) container.style.display = 'none';
             if (parsed.includeChars?.length) setVal('includeChars', parsed.includeChars.join(','));
             if (parsed.excludeChars?.length) setVal('excludeChars', parsed.excludeChars.join(','));
             if (parsed.uniqueWordLengths) setChecked('uniqueWordLengths', true);
@@ -665,7 +663,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         listName: commonListName,
                         firstChar: getVal('firstChar').trim() || null,
                         lastChar: getVal('lastChar').trim() || null,
-                        wordCount: getVal('wordCountType') === 'fixed' ? parseInt(getVal('wordCount'), 10) : 'shortest',
+                        wordCount: getVal('wordCountType') === 'fixed'
+                            ? parseInt(getVal('wordCount'), 10)
+                            : getVal('wordCountType') === 'shortest'
+                                ? 'shortest'
+                                : null,
                         requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
                         excludeChars: getVal('excludeChars').trim(),
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
