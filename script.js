@@ -100,12 +100,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 文字数入力の表示制御
     const wordCountTypeSelect = document.getElementById('wordCountType');
+    const shiritoriTotalLengthInput = document.getElementById('shiritoriTotalLength');
+
+    const updateWordCountNoneOption = () => {
+        if (!wordCountTypeSelect) return;
+        const noneOption = wordCountTypeSelect.querySelector('option[value="none"]');
+        const hasTotalLength = shiritoriTotalLengthInput?.value.trim() !== '';
+        if (noneOption) {
+            noneOption.disabled = !hasTotalLength;
+        }
+        if (!hasTotalLength && wordCountTypeSelect.value === 'none') {
+            wordCountTypeSelect.value = 'shortest';
+        }
+        const container = document.getElementById('wordCountInputContainer');
+        if (container) container.style.display = (wordCountTypeSelect.value === 'fixed') ? 'block' : 'none';
+    };
+
     if (wordCountTypeSelect) {
-        wordCountTypeSelect.addEventListener('change', (e) => {
-            const container = document.getElementById('wordCountInputContainer');
-            if (container) container.style.display = (e.target.value === 'fixed') ? 'block' : 'none';
+        wordCountTypeSelect.addEventListener('change', () => {
+            updateWordCountNoneOption();
         });
     }
+    if (shiritoriTotalLengthInput) {
+        shiritoriTotalLengthInput.addEventListener('input', () => {
+            updateWordCountNoneOption();
+        });
+    }
+    updateWordCountNoneOption();
 
     // --- 3.5 自動生成モード：条件モード切り替え ---
     const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
