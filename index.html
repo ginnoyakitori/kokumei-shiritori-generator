@@ -40,6 +40,21 @@
                 <option value="substring">単語検索（部分一致）</option>
             </select>
         </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="resultPage">ページ</label>
+                <input type="number" id="resultPage" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="resultsPerPage">表示件数</label>
+                <input type="number" id="resultsPerPage" value="100" min="1" max="500">
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <button type="button" id="prevPageBtn" class="secondary">前へ</button>
+                <button type="button" id="nextPageBtn" class="secondary">次へ</button>
+            </div>
+        </div>
     </section>
 
     <section class="chat-settings" aria-labelledby="chatSettingsTitle">

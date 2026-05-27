@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const listNameSelect = document.getElementById('listName'); // 共通リスト
     const resultsDiv = document.getElementById('results');
     const searchButtons = document.querySelectorAll('.search-btn');
+    const resultPageInput = document.getElementById('resultPage');
+    const resultsPerPageInput = document.getElementById('resultsPerPage');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
 
     const modeSections = {
         shiritori: document.getElementById('shiritoriMode'),
@@ -31,6 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
             element.checked = Boolean(checked);
         }
     };
+    const getPagingRequest = () => ({
+        page: Math.max(1, parseInt(resultPageInput?.value, 10) || 1),
+        perPage: Math.min(500, Math.max(1, parseInt(resultsPerPageInput?.value, 10) || 100))
+    });
+    const runActiveSearch = () => {
+        const activeSection = modeSections[modeSelect.value];
+        const button = activeSection?.querySelector('.search-btn');
+        if (button) button.click();
+    };
 
     // --- 1. ビュー切り替えロジック ---
     const updateModeView = () => {
@@ -42,6 +55,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
     modeSelect.addEventListener('change', updateModeView);
+    modeSelect.addEventListener('change', () => {
+        if (resultPageInput) resultPageInput.value = '1';
+    });
+    listNameSelect.addEventListener('change', () => {
+        if (resultPageInput) resultPageInput.value = '1';
+    });
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', () => {
+            const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
+            if (currentPage <= 1) return;
+            resultPageInput.value = String(currentPage - 1);
+            runActiveSearch();
+        });
+    }
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', () => {
+            const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
+            resultPageInput.value = String(currentPage + 1);
+            runActiveSearch();
+        });
+    }
     updateModeView();
 
     // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
@@ -826,6 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // APIリクエスト送信
                 if (apiPath) {
+                    requestBody = { ...requestBody, ...getPagingRequest() };
                     const response = await fetch(apiPath, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -843,11 +878,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- 5. 結果表示ロジック ---
+    const getResultSummaryText = (data, count) => {
+        if (!data.page || !data.perPage) {
+            return `${count} 件の結果を表示します:`;
+        }
+        const start = count > 0 ? ((data.page - 1) * data.perPage) + 1 : 0;
+        const end = ((data.page - 1) * data.perPage) + count;
+        const suffix = data.hasMore ? '（次のページあり）' : '';
+        return `${start}-${end} 件目を表示します${suffix}:`;
+    };
+
     const displayResults = (data, mode) => {
         resultsDiv.innerHTML = '';
         if (data.error) {
             resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
             return;
+        }
+        if (prevPageBtn) {
+            prevPageBtn.disabled = (parseInt(resultPageInput?.value, 10) || 1) <= 1;
+        }
+        if (nextPageBtn && data.hasMore !== undefined) {
+            nextPageBtn.disabled = !data.hasMore;
         }
 
         // 自動生成モードの結果表示
@@ -910,7 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const summary = document.createElement('p');
             summary.className = 'result-summary';
-            summary.textContent = `${results.length} 件の結果を表示します:`;
+            summary.textContent = getResultSummaryText(data, results.length);
             resultsDiv.appendChild(summary);
 
             const ul = document.createElement('ul');
@@ -934,7 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const summary = document.createElement('p');
             summary.className = 'result-summary';
-            summary.textContent = `${results.length} 件の結果を表示します:`;
+            summary.textContent = getResultSummaryText(data, results.length);
             resultsDiv.appendChild(summary);
 
             const ul = document.createElement('ul');
@@ -962,7 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (results.length > 0) {
             const summary = document.createElement('p');
             summary.className = 'result-summary';
-            summary.textContent = `${results.length} 件の結果を表示します:`;
+            summary.textContent = getResultSummaryText(data, results.length);
             resultsDiv.appendChild(summary);
 
             const ul = document.createElement('ul');
