@@ -1183,8 +1183,64 @@ app.post('/api/word_count_shiritori', (req, res) => {
     let { listName, wordCountPatterns, allowPermutation, uniqueWordLengths, totalLength, advancedConditions } = req.body;
     const map = wordMap[listName];
 
-    if (!map || !wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
-        return res.status(400).json({ error: '無効な単語数パターンが指定されました。' });
+    if (!map) {
+        return res.status(400).json({ error: '無効な単語リストです。' });
+    }
+
+    // wordCountPatternsが指定されていない場合、totalLengthで検索
+    if (!wordCountPatterns || !Array.isArray(wordCountPatterns) || wordCountPatterns.length === 0) {
+        if (!totalLength || totalLength < 1) {
+            return res.status(400).json({ error: '単語数パターンまたは合計文字数を指定してください。' });
+        }
+        
+        // 合計文字数のみで検索する処理
+        const startTime = Date.now();
+        const cachePayload = { listName, wordCountPatterns: [], allowPermutation, uniqueWordLengths, totalLength, advancedConditions };
+        const cached = getSearchCache('word_count_shiritori', cachePayload);
+        if (cached) return res.json(cached);
+
+        try {
+            let results = [];
+            const allWords = getAllWords(listName);
+            
+            // 合計文字数に応じた可能性のある単語数を試す（1〜totalLength）
+            for (let wordCount = 1; wordCount <= totalLength; wordCount++) {
+                const combos = findShiritoriCombinations(map, null, null, wordCount, null, null, false, false, 'atLeast', listName);
+                results = results.concat(combos);
+            }
+
+            if (uniqueWordLengths) {
+                results = filterUniqueWordLengths(results);
+            }
+            
+            // 合計文字数でフィルタリング
+            if (totalLength) {
+                results = filterByTotalLength(results, totalLength);
+            }
+
+            results = filterByAdvancedConditions(results, advancedConditions, listName);
+            
+            // 重複を削除
+            const seen = new Set();
+            const uniqueResults = [];
+            results.forEach(path => {
+                const key = path.join(',');
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueResults.push(path);
+                }
+            });
+            
+            const elapsed = Date.now() - startTime;
+            console.log(`Word count shiritori search (totalLength only) completed in ${elapsed}ms (${uniqueResults.length} results)`);
+            
+            const response = { results: uniqueResults };
+            setSearchCache('word_count_shiritori', cachePayload, response);
+            return res.json(response);
+        } catch (e) {
+            console.error("Error in word count shiritori (totalLength search):", e);
+            return res.status(500).json({ error: 'サーバー内部でエラーが発生しました。' });
+        }
     }
     
     const isValid = wordCountPatterns.every(arr => Array.isArray(arr) && arr.length > 0 && arr.every(n => typeof n === 'number' && n > 0));
