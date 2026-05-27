@@ -884,8 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const start = count > 0 ? ((data.page - 1) * data.perPage) + 1 : 0;
         const end = ((data.page - 1) * data.perPage) + count;
-        const suffix = data.hasMore ? '（次のページあり）' : '';
-        return `${start}-${end} 件目を表示します${suffix}:`;
+        return `${start}-${end} 件目 / 全体 ${data.totalCount} 件`;
     };
 
     const displayResults = (data, mode) => {
@@ -895,11 +894,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (prevPageBtn) {
-            prevPageBtn.disabled = (parseInt(resultPageInput?.value, 10) || 1) <= 1;
+            prevPageBtn.disabled = data.page <= 1;
         }
-        if (nextPageBtn && data.hasMore !== undefined) {
-            nextPageBtn.disabled = !data.hasMore;
-        }
+
+        if (nextPageBtn) {
+            nextPageBtn.disabled = data.page >= data.totalPages;
+       }
 
         // 自動生成モードの結果表示
         if (mode === 'autoGenerate') {
@@ -1000,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // サーバーからのレスポンス形式を統合
-        const results = data.results || data.wildcardMatches || data.substringMatches || [];
+        const results = data.results || [];
         const firstCharCounts = data.firstCharCounts || {};
         const lastCharCounts = data.lastCharCounts || {};
 

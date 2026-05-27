@@ -137,14 +137,32 @@ function getPagingOptions(body = {}) {
 }
 
 function pageResults(results, paging) {
-    const pageItems = results.slice(paging.offset, paging.offset + paging.perPage);
+    const totalCount = results.length;
+
+    // ✅ 100件以下はページングしない
+    if (totalCount <= 100) {
+        return {
+            totalCount,
+            totalPages: 1,
+            page: 1,
+            perPage: totalCount,
+            results,
+            hasMore: false
+        };
+    }
+
+    const pageItems = results.slice(
+        paging.offset,
+        paging.offset + paging.perPage
+    );
+
     return {
-        results: pageItems,
+        totalCount,
+        totalPages: Math.ceil(totalCount / paging.perPage),
         page: paging.page,
         perPage: paging.perPage,
-        returned: pageItems.length,
-        hasMore: results.length > paging.offset + paging.perPage,
-        truncated: results.length >= paging.collectLimit
+        results: pageItems,
+        hasMore: totalCount > paging.offset + paging.perPage
     };
 }
 
@@ -1368,9 +1386,8 @@ app.post('/api/wildcard_search', (req, res) => {
     if (cached) return res.json(cached);
 
     const matches = getWildcardCandidates(listName, searchText);
-    const paged = pageResults(matches, paging);
-    const response = { wildcardMatches: paged.results, ...paged };
-    delete response.results;
+    const response = pageResults(matches, paging);
+
     setSearchCache('wildcard_search', { listName, searchText, page: paging.page, perPage: paging.perPage }, response);
     return res.json(response);
 });
@@ -1395,9 +1412,8 @@ app.post('/api/substring_search', (req, res) => {
             if (matches.length >= paging.collectLimit) break;
         }
     }
-    const paged = pageResults(matches, paging);
-    const response = { substringMatches: paged.results, ...paged };
-    delete response.results;
+    const response = pageResults(matches, paging);
+
     setSearchCache('substring_search', { listName, searchText, page: paging.page, perPage: paging.perPage }, response);
     return res.json(response);
 });
