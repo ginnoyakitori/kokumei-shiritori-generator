@@ -545,19 +545,24 @@ function finishResults(results, {
 } = {}) {
   let out = results;
 
+  // 1. まず「単語の文字数がすべて異なる経路のみ表示」
   if (uniqueWordLengths) {
     out = filterUniqueWordLengths(out);
   }
 
-  if (uniquePairOnly) {
-    out = filterUniquePairOnly(out);
-  }
-
+  // 2. 次に合計文字数フィルター
   if (totalLength) {
     out = filterByTotalLength(out, Number(totalLength));
   }
 
+  // 3. 次に高度条件フィルター
   out = filterByAdvancedConditions(out, advancedConditions, listName);
+
+  // 4. 最後に、残った経路だけを対象に
+  //    「最初と最後の文字の組み合わせが唯一の経路のみ表示」
+  if (uniquePairOnly) {
+    out = filterUniquePairOnly(out);
+  }
 
   return out;
 }
