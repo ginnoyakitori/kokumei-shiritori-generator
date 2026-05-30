@@ -656,82 +656,119 @@ function findShiritoriShortestPath(
 ) {
   const allWords = getAllWords(listName);
 
+  // 開始文字が未指定なら全単語から開始する
   let starts = firstChar ? (map[firstChar] || []) : allWords;
 
+  // 「前に続けられる単語なし」条件
   if (noPrecedingWord) {
-    starts = starts.filter(w => listIndexes[listName]?.noPrecedingWords?.has(w));
+    starts = starts.filter(word =>
+      listIndexes[listName]?.noPrecedingWords?.has(word)
+    );
   }
 
-  starts = starts.filter(w => !containsAnyExcludedChar(w, excludeChars));
+  // 除外文字を含む開始単語は最初から除外
+  starts = starts.filter(word => !containsAnyExcludedChar(word, excludeChars));
 
   const pq = new PriorityQueue();
-  const best = Object.create(null);
+  const results = [];
   const seenPaths = new Set();
-  let shortest = Infinity;
-  let results = [];
 
+  let shortestLength = Infinity;
+
+  // 初期状態を投入
   for (const word of starts) {
-    best[word] = word.length;
-    pq.push([word.length, word, [word]]);
+    pq.push([
+      word.length,
+      word,
+      [word]
+    ]);
   }
 
   while (pq.size()) {
-    const [length, word, path] = pq.pop();
+    const [currentLength, currentWord, path] = pq.pop();
 
-    if (length > shortest || length > best[word]) {
+    // すでに見つかった最短より長い経路は不要
+    if (currentLength > shortestLength) {
       continue;
     }
 
-    const used = new Set(path);
-    const end = getLastChar(word);
-    const canEnd = lastChar == null || end === lastChar;
+    const pathKey = path.join(',');
 
-    if (canEnd) {
-      const okNoNext =
-        !noSucceedingWord ||
-        !(wordsByFirstChar[listName]?.[end] || [])
-          .some(w => w !== word && !used.has(w));
+    if (seenPaths.has(pathKey)) {
+      continue;
+    }
+
+    seenPaths.add(pathKey);
+
+    const used = new Set(path);
+    const endChar = getLastChar(currentWord);
+
+    // 終了文字が未指定なら、どの文字で終わっても候補になる
+    const matchesLastChar =
+      lastChar == null ||
+      lastChar === '' ||
+      endChar === lastChar;
+
+    if (matchesLastChar) {
+      let okNoSucceeding = true;
+
+      if (noSucceedingWord) {
+        const nextWords = wordsByFirstChar[listName]?.[endChar] || [];
+
+        okNoSucceeding = !nextWords.some(word =>
+          word !== currentWord && !used.has(word)
+        );
+      }
 
       if (
-        okNoNext &&
+        okNoSucceeding &&
         checkRequiredChars(path, requiredChars, requiredCharMode) &&
         checkExcludeChars(path, excludeChars)
       ) {
-        const key = path.join(',');
-
-        if (!seenPaths.has(key)) {
-          seenPaths.add(key);
-
-          if (length < shortest) {
-            shortest = length;
-            results = [path];
-          } else if (length === shortest) {
-            results.push(path);
-          }
+        if (currentLength < shortestLength) {
+          shortestLength = currentLength;
+          results.length = 0;
+          results.push([...path]);
+        } else if (currentLength === shortestLength) {
+          results.push([...path]);
         }
+
+        // この経路より長いものは後で枝刈りされるので、
+        // ここでは continue してもよい
+        continue;
       }
     }
 
-    if (end === 'ン') {
-      continue;
-    }
+    
 
-    for (const next of wordsByFirstChar[listName]?.[end] || []) {
-      if (used.has(next)) continue;
-      if (containsAnyExcludedChar(next, excludeChars)) continue;
+    const nextWords = wordsByFirstChar[listName]?.[endChar] || [];
 
-      const nextLength = length + next.length;
-      if (nextLength > shortest) continue;
-
-      if (!best[next] || nextLength <= best[next]) {
-        best[next] = nextLength;
-        pq.push([nextLength, next, [...path, next]]);
+    for (const nextWord of nextWords) {
+      if (used.has(nextWord)) {
+        continue;
       }
+
+      if (containsAnyExcludedChar(nextWord, excludeChars)) {
+        continue;
+      }
+
+      const nextLength = currentLength + nextWord.length;
+
+      if (nextLength > shortestLength) {
+        continue;
+      }
+
+      pq.push([
+        nextLength,
+        nextWord,
+        [...path, nextWord]
+      ]);
     }
   }
 
   return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
-}// ===== 固定単語数しりとり =====
+}
+// ===== 固定単語数しりとり =====
 function findShiritoriCombinations(
   map,
   firstChar,
