@@ -31,6 +31,36 @@ const regexCache = Object.create(null);
 const searchResultCache = new Map();
 const MAX_SEARCH_CACHE_ENTRIES = 200;
 
+// ===== 起動時しりとり事前生成キャッシュ =====
+// key: `${listName}:${wordCount}`
+// value: 経路配列 [[word1, word2, ...], ...]
+const startupShiritoriPathCache = new Map();
+
+const STARTUP_PRECOMPUTE_WORD_LIMITS = {
+  [POKEMON_KEY]: 2,
+  [KOKUMEI_SHUTOMEI_KEY]: 3,
+  [KOKUMEI_KEY]: 5,
+  [SHUTOMEI_KEY]: 5,
+  [COUNTRIES_ONLY_KEY]: 5,
+  [CAPITALS_ONLY_KEY]: 5
+};
+
+function getStartupShiritoriCacheKey(listName, wordCount) {
+  return `${listName}:${wordCount}`;
+}
+
+function hasStartupPrecomputedShiritori(listName, wordCount) {
+  return startupShiritoriPathCache.has(
+    getStartupShiritoriCacheKey(listName, wordCount)
+  );
+}
+
+function getStartupPrecomputedShiritori(listName, wordCount) {
+  return startupShiritoriPathCache.get(
+    getStartupShiritoriCacheKey(listName, wordCount)
+  ) || null;
+}
+
 // ===== 文字種 =====
 const DAKUTEN_CHARS = new Set('ガギグゲゴザジズゼゾダヂヅデドバビブベボヴがぎぐげござじずぜぞだぢづでどばびぶべぼゔ');
 const HANDAKUTEN_CHARS = new Set('パピプペポぱぴぷぺぽ');
@@ -1272,10 +1302,131 @@ function normalizeRequiredChars(value) {
   if (!Array.isArray(value)) return null;
   return value.length ? value.filter(Boolean) : null;
 }
+
 ``// ===== 起動前ロード =====
 console.log('Loading word data...');
-loadWordData();
-console.log('Word data loaded successfully!');
+
+
+// ===== 起動時しりとり事前生成 =====
+function generateAllShiritoriPathsByCount(listName, wordCount) {
+  const allWords = getAllWords(listName);
+  const results = [];
+
+  if (!wordCount || wordCount < 1) {
+    return results;
+  }
+
+  function backtrack(path, used) {
+    if (path.length === wordCount) {
+      results.push([...path]);
+      return;
+    }
+
+    const lastChar = getLastChar(path[path.length - 1]);
+    const nextWords = wordsByFirstChar[listName]?.[lastChar] || [];
+
+    for (const nextWord of nextWords) {
+      if (used.has(nextWord)) {
+        continue;
+      }
+
+      used.add(nextWord);
+      path.push(nextWord);
+
+      backtrack(path, used);
+
+      path.pop();
+      used.delete(nextWord);
+    }
+  }
+
+  for (const startWord of allWords) {
+    backtrack([startWord], new Set([startWord]));
+  }
+
+  return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
+}
+
+function precomputeStartupShiritoriCache() {
+  console.log('Precomputing startup shiritori cache...');
+
+  const totalStarted = Date.now();
+
+  for (const [listName, maxWordCount] of Object.entries(STARTUP_PRECOMPUTE_WORD_LIMITS)) {
+    if (!wordLists[listName]) {
+      continue;
+    }
+
+    for (let wordCount = 1; wordCount <= maxWordCount; wordCount++) {
+      const started = Date.now();
+      const key = getStartupShiritoriCacheKey(listName, wordCount);
+
+      const results = generateAllShiritoriPathsByCount(listName, wordCount);
+      startupShiritoriPathCache.set(key, results);
+
+      console.log(
+        `Precomputed ${listName} / ${wordCount} words: ${results.length} paths in ${Date.now() - started}ms`
+      );
+    }
+  }
+
+  console.log(
+    `Startup shiritori cache ready in ${Date.now() - totalStarted}ms`
+  );
+}
+
+function filterStartupPrecomputedShiritoriPaths(
+  paths,
+  {
+    listName,
+    firstChar,
+    lastChar,
+    requiredChars,
+    excludeChars,
+    noPrecedingWord,
+    noSucceedingWord,
+    requiredCharMode
+  }
+) {
+  if (!paths || paths.length === 0) {
+    return [];
+  }
+
+  return paths.filter(path => {
+    if (firstChar && getFirstChar(path[0]) !== firstChar) {
+      return false;
+    }
+
+    if (lastChar && getLastChar(path[path.length - 1]) !== lastChar) {
+      return false;
+    }
+
+    if (
+      noPrecedingWord &&
+      !listIndexes[listName]?.noPrecedingWords?.has(path[0])
+    ) {
+      return false;
+    }
+
+    if (
+      noSucceedingWord &&
+      hasSucceedingWord(path, listName)
+    ) {
+      return false;
+    }
+
+    if (!checkRequiredChars(path, requiredChars, requiredCharMode)) {
+      return false;
+    }
+
+    if (!checkExcludeChars(path, excludeChars)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 
 // ===== API: 文字指定しりとり =====
 app.post('/api/shiritori', (req, res) => {
@@ -1383,21 +1534,47 @@ app.post('/api/shiritori', (req, res) => {
       });
     } else {
       // 通常の固定単語数検索
-      results = findShiritoriCombinations(
-        map,
-        firstChar,
-        lastChar,
-        wordCount,
-        requiredChars,
-        excludeChars,
-        noPrecedingWord,
-        noSucceedingWord,
-        mode,
-        listName,
-        { totalLength, uniqueWordLengths }
-      );
+      // 起動時に事前生成済みの単語数なら、DFSせずキャッシュから絞り込む
+      if (
+        Number.isInteger(wordCount) &&
+        hasStartupPrecomputedShiritori(listName, wordCount)
+      ) {
+        const precomputedPaths = getStartupPrecomputedShiritori(
+          listName,
+          wordCount
+        );
+
+        results = filterStartupPrecomputedShiritoriPaths(
+          precomputedPaths,
+          {
+            listName,
+            firstChar,
+            lastChar,
+            requiredChars,
+            excludeChars,
+            noPrecedingWord,
+            noSucceedingWord,
+            requiredCharMode: mode
+          }
+        );
+      } else {
+        results = findShiritoriCombinations(
+          map,
+          firstChar,
+          lastChar,
+          wordCount,
+          requiredChars,
+          excludeChars,
+          noPrecedingWord,
+          noSucceedingWord,
+          mode,
+          listName,
+          { totalLength, uniqueWordLengths }
+        );
+      }
 
       // 通常検索では、探索後に高度条件も含めて絞り込む
+      // uniquePairOnly は finishResults() の最後に実行される前提
       results = finishResults(results, {
         uniqueWordLengths,
         uniquePairOnly,
