@@ -1533,21 +1533,47 @@ app.post('/api/shiritori', (req, res) => {
       });
     } else {
       // 通常の固定単語数検索
-      results = findShiritoriCombinations(
-        map,
-        firstChar,
-        lastChar,
-        wordCount,
-        requiredChars,
-        excludeChars,
-        noPrecedingWord,
-        noSucceedingWord,
-        mode,
-        listName,
-        { totalLength, uniqueWordLengths }
-      );
+      // 起動時に事前生成済みの単語数なら、DFSせずキャッシュから絞り込む
+      if (
+        Number.isInteger(wordCount) &&
+        hasStartupPrecomputedShiritori(listName, wordCount)
+      ) {
+        const precomputedPaths = getStartupPrecomputedShiritori(
+          listName,
+          wordCount
+        );
+
+        results = filterStartupPrecomputedShiritoriPaths(
+          precomputedPaths,
+          {
+            listName,
+            firstChar,
+            lastChar,
+            requiredChars,
+            excludeChars,
+            noPrecedingWord,
+            noSucceedingWord,
+            requiredCharMode: mode
+          }
+        );
+      } else {
+        results = findShiritoriCombinations(
+          map,
+          firstChar,
+          lastChar,
+          wordCount,
+          requiredChars,
+          excludeChars,
+          noPrecedingWord,
+          noSucceedingWord,
+          mode,
+          listName,
+          { totalLength, uniqueWordLengths }
+        );
+      }
 
       // 通常検索では、探索後に高度条件も含めて絞り込む
+      // uniquePairOnly は finishResults() の最後に実行される前提
       results = finishResults(results, {
         uniqueWordLengths,
         uniquePairOnly,
