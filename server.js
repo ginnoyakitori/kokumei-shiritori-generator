@@ -652,7 +652,8 @@ function findShiritoriShortestPath(
   noPrecedingWord,
   noSucceedingWord,
   requiredCharMode,
-  listName
+  listName,
+  advancedConditions
 ) {
   const allWords = getAllWords(listName);
 
@@ -671,7 +672,7 @@ function findShiritoriShortestPath(
 
   const pq = new PriorityQueue();
   const results = [];
-  const seenPaths = new Set();
+  const seenStates = new Set();
 
   let shortestLength = Infinity;
 
@@ -687,18 +688,18 @@ function findShiritoriShortestPath(
   while (pq.size()) {
     const [currentLength, currentWord, path] = pq.pop();
 
-    // すでに見つかった最短より長い経路は不要
+    // すでに高度条件まで満たした最短経路より長いものは不要
     if (currentLength > shortestLength) {
       continue;
     }
 
     const pathKey = path.join(',');
 
-    if (seenPaths.has(pathKey)) {
+    if (seenStates.has(pathKey)) {
       continue;
     }
 
-    seenPaths.add(pathKey);
+    seenStates.add(pathKey);
 
     const used = new Set(path);
     const endChar = getLastChar(currentWord);
@@ -720,11 +721,18 @@ function findShiritoriShortestPath(
         );
       }
 
-      if (
+      const okBasicConditions =
         okNoSucceeding &&
         checkRequiredChars(path, requiredChars, requiredCharMode) &&
-        checkExcludeChars(path, excludeChars)
-      ) {
+        checkExcludeChars(path, excludeChars);
+
+      // ここで高度条件も判定する
+      const okAdvancedConditions =
+        !advancedConditions ||
+        Object.keys(advancedConditions).length === 0 ||
+        filterByAdvancedConditions([path], advancedConditions, listName).length === 1;
+
+      if (okBasicConditions && okAdvancedConditions) {
         if (currentLength < shortestLength) {
           shortestLength = currentLength;
           results.length = 0;
@@ -733,13 +741,10 @@ function findShiritoriShortestPath(
           results.push([...path]);
         }
 
-        // この経路より長いものは後で枝刈りされるので、
-        // ここでは continue してもよい
+        // この経路からさらに伸ばすと必ず長くなるので不要
         continue;
       }
     }
-
-    
 
     const nextWords = wordsByFirstChar[listName]?.[endChar] || [];
 
