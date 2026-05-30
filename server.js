@@ -31,32 +31,6 @@ const regexCache = Object.create(null);
 const searchResultCache = new Map();
 const MAX_SEARCH_CACHE_ENTRIES = 200;
 
-// ===== リスト名の正規化 =====
-function normalizeListName(listName) {
-  const raw = String(listName || '').trim();
-
-  // 念のため、Markdown由来などのバックスラッシュを除去
-  const cleaned = raw.replace(/\\/g, '');
-
-  const aliases = {
-    '国名': KOKUMEI_KEY,
-    '首都名': SHUTOMEI_KEY,
-    '国名と首都名': KOKUMEI_SHUTOMEI_KEY,
-    'ポケモン': POKEMON_KEY,
-    '共役削除国名': COUNTRIES_ONLY_KEY,
-    '共役削除首都名': CAPITALS_ONLY_KEY,
-
-    'kokumei.txt': KOKUMEI_KEY,
-    'shutomei.txt': SHUTOMEI_KEY,
-    'kokumei_shutomei.txt': KOKUMEI_SHUTOMEI_KEY,
-    'pokemon.txt': POKEMON_KEY,
-    'countries-only.txt': COUNTRIES_ONLY_KEY,
-    'capitals-only.txt': CAPITALS_ONLY_KEY
-  };
-
-  return aliases[cleaned] || cleaned;
-}
-
 // ===== 起動時しりとり事前生成キャッシュ =====
 // key: `${listName}:${wordCount}`
 // value: 経路配列 [[word1, word2, ...], ...]
@@ -277,10 +251,6 @@ function loadWordData() {
     buildListIndexes(listName);
   }
 }
-
-console.log('Loaded word lists:', Object.keys(wordLists));
-console.log('Loaded word maps:', Object.keys(wordMap));
-``
 
 function getAllWords(listName) {
   return listIndexes[listName]?.allWords || [];
@@ -1332,131 +1302,10 @@ function normalizeRequiredChars(value) {
   if (!Array.isArray(value)) return null;
   return value.length ? value.filter(Boolean) : null;
 }
-
 ``// ===== 起動前ロード =====
 console.log('Loading word data...');
-
-
-// ===== 起動時しりとり事前生成 =====
-function generateAllShiritoriPathsByCount(listName, wordCount) {
-  const allWords = getAllWords(listName);
-  const results = [];
-
-  if (!wordCount || wordCount < 1) {
-    return results;
-  }
-
-  function backtrack(path, used) {
-    if (path.length === wordCount) {
-      results.push([...path]);
-      return;
-    }
-
-    const lastChar = getLastChar(path[path.length - 1]);
-    const nextWords = wordsByFirstChar[listName]?.[lastChar] || [];
-
-    for (const nextWord of nextWords) {
-      if (used.has(nextWord)) {
-        continue;
-      }
-
-      used.add(nextWord);
-      path.push(nextWord);
-
-      backtrack(path, used);
-
-      path.pop();
-      used.delete(nextWord);
-    }
-  }
-
-  for (const startWord of allWords) {
-    backtrack([startWord], new Set([startWord]));
-  }
-
-  return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-function precomputeStartupShiritoriCache() {
-  console.log('Precomputing startup shiritori cache...');
-
-  const totalStarted = Date.now();
-
-  for (const [listName, maxWordCount] of Object.entries(STARTUP_PRECOMPUTE_WORD_LIMITS)) {
-    if (!wordLists[listName]) {
-      continue;
-    }
-
-    for (let wordCount = 1; wordCount <= maxWordCount; wordCount++) {
-      const started = Date.now();
-      const key = getStartupShiritoriCacheKey(listName, wordCount);
-
-      const results = generateAllShiritoriPathsByCount(listName, wordCount);
-      startupShiritoriPathCache.set(key, results);
-
-      console.log(
-        `Precomputed ${listName} / ${wordCount} words: ${results.length} paths in ${Date.now() - started}ms`
-      );
-    }
-  }
-
-  console.log(
-    `Startup shiritori cache ready in ${Date.now() - totalStarted}ms`
-  );
-}
-
-function filterStartupPrecomputedShiritoriPaths(
-  paths,
-  {
-    listName,
-    firstChar,
-    lastChar,
-    requiredChars,
-    excludeChars,
-    noPrecedingWord,
-    noSucceedingWord,
-    requiredCharMode
-  }
-) {
-  if (!paths || paths.length === 0) {
-    return [];
-  }
-
-  return paths.filter(path => {
-    if (firstChar && getFirstChar(path[0]) !== firstChar) {
-      return false;
-    }
-
-    if (lastChar && getLastChar(path[path.length - 1]) !== lastChar) {
-      return false;
-    }
-
-    if (
-      noPrecedingWord &&
-      !listIndexes[listName]?.noPrecedingWords?.has(path[0])
-    ) {
-      return false;
-    }
-
-    if (
-      noSucceedingWord &&
-      hasSucceedingWord(path, listName)
-    ) {
-      return false;
-    }
-
-    if (!checkRequiredChars(path, requiredChars, requiredCharMode)) {
-      return false;
-    }
-
-    if (!checkExcludeChars(path, excludeChars)) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
+loadWordData();
+console.log('Word data loaded successfully!');
 
 // ===== API: 文字指定しりとり =====
 app.post('/api/shiritori', (req, res) => {
@@ -1479,18 +1328,11 @@ app.post('/api/shiritori', (req, res) => {
     advancedConditions
   } = req.body;
 
-  listName = normalizeListName(listName);
-
   const words = wordLists[listName];
   const map = wordMap[listName];
 
   if (!map || !words) {
-    console.error('Invalid listName:', listName);
-    console.error('Available lists:', Object.keys(wordLists));
-
-    return res.status(400).json({
-      error: `無効な単語リストです: ${listName}`
-    });
+    return res.status(400).json({ error: '無効な単語リストです。' });
   }
 
   firstChar = firstChar || null;
@@ -1571,47 +1413,21 @@ app.post('/api/shiritori', (req, res) => {
       });
     } else {
       // 通常の固定単語数検索
-      // 起動時に事前生成済みの単語数なら、DFSせずキャッシュから絞り込む
-      if (
-        Number.isInteger(wordCount) &&
-        hasStartupPrecomputedShiritori(listName, wordCount)
-      ) {
-        const precomputedPaths = getStartupPrecomputedShiritori(
-          listName,
-          wordCount
-        );
-
-        results = filterStartupPrecomputedShiritoriPaths(
-          precomputedPaths,
-          {
-            listName,
-            firstChar,
-            lastChar,
-            requiredChars,
-            excludeChars,
-            noPrecedingWord,
-            noSucceedingWord,
-            requiredCharMode: mode
-          }
-        );
-      } else {
-        results = findShiritoriCombinations(
-          map,
-          firstChar,
-          lastChar,
-          wordCount,
-          requiredChars,
-          excludeChars,
-          noPrecedingWord,
-          noSucceedingWord,
-          mode,
-          listName,
-          { totalLength, uniqueWordLengths }
-        );
-      }
+      results = findShiritoriCombinations(
+        map,
+        firstChar,
+        lastChar,
+        wordCount,
+        requiredChars,
+        excludeChars,
+        noPrecedingWord,
+        noSucceedingWord,
+        mode,
+        listName,
+        { totalLength, uniqueWordLengths }
+      );
 
       // 通常検索では、探索後に高度条件も含めて絞り込む
-      // uniquePairOnly は finishResults() の最後に実行される前提
       results = finishResults(results, {
         uniqueWordLengths,
         uniquePairOnly,
@@ -1744,9 +1560,6 @@ app.post('/api/wildcard_search', (req, res) => {
   const paging = normalizePaging(req.body.page, req.body.perPage);
 
   const { listName, searchText } = req.body;
-
-  listName = normalizeListName(listName);
-  
   const words = wordLists[listName];
 
   if (!words || !searchText) {
@@ -1778,9 +1591,6 @@ app.post('/api/substring_search', (req, res) => {
   const paging = normalizePaging(req.body.page, req.body.perPage);
 
   const { listName, searchText } = req.body;
-
-  listName = normalizeListName(listName);
-
   const words = wordLists[listName];
 
   if (!words || !searchText) {
