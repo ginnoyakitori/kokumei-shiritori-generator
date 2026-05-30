@@ -1353,6 +1353,8 @@ app.post('/api/shiritori', (req, res) => {
         };
       }
 
+      // 最短検索では、必須文字・除外文字・高度条件を
+      // 探索中に満たす経路だけを最短候補にする
       results = findShiritoriShortestPath(
         map,
         firstChar,
@@ -1362,9 +1364,25 @@ app.post('/api/shiritori', (req, res) => {
         noPrecedingWord,
         noSucceedingWord,
         mode,
-        listName
+        listName,
+        advancedConditions
       );
+
+      // 高度条件は findShiritoriShortestPath() の中で判定済み。
+      // ここでは、残った最短経路に対して
+      // 文字数一意・合計文字数・唯一ペアなどを後処理する。
+      //
+      // ※ uniquePairOnly は finishResults() の中で
+      //   最後に実行されるようにしておく。
+      results = finishResults(results, {
+        uniqueWordLengths,
+        uniquePairOnly,
+        totalLength,
+        advancedConditions: null,
+        listName
+      });
     } else {
+      // 通常の固定単語数検索
       results = findShiritoriCombinations(
         map,
         firstChar,
@@ -1378,15 +1396,16 @@ app.post('/api/shiritori', (req, res) => {
         listName,
         { totalLength, uniqueWordLengths }
       );
-    }
 
-    results = finishResults(results, {
-      uniqueWordLengths,
-      uniquePairOnly,
-      totalLength,
-      advancedConditions,
-      listName
-    });
+      // 通常検索では、探索後に高度条件も含めて絞り込む
+      results = finishResults(results, {
+        uniqueWordLengths,
+        uniquePairOnly,
+        totalLength,
+        advancedConditions,
+        listName
+      });
+    }
 
     console.log(
       `Shiritori completed in ${Date.now() - started}ms (${results.length} results)`
