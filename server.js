@@ -31,6 +31,32 @@ const regexCache = Object.create(null);
 const searchResultCache = new Map();
 const MAX_SEARCH_CACHE_ENTRIES = 200;
 
+// ===== リスト名の正規化 =====
+function normalizeListName(listName) {
+  const raw = String(listName || '').trim();
+
+  // 念のため、Markdown由来などのバックスラッシュを除去
+  const cleaned = raw.replace(/\\/g, '');
+
+  const aliases = {
+    '国名': KOKUMEI_KEY,
+    '首都名': SHUTOMEI_KEY,
+    '国名と首都名': KOKUMEI_SHUTOMEI_KEY,
+    'ポケモン': POKEMON_KEY,
+    '共役削除国名': COUNTRIES_ONLY_KEY,
+    '共役削除首都名': CAPITALS_ONLY_KEY,
+
+    'kokumei.txt': KOKUMEI_KEY,
+    'shutomei.txt': SHUTOMEI_KEY,
+    'kokumei_shutomei.txt': KOKUMEI_SHUTOMEI_KEY,
+    'pokemon.txt': POKEMON_KEY,
+    'countries-only.txt': COUNTRIES_ONLY_KEY,
+    'capitals-only.txt': CAPITALS_ONLY_KEY
+  };
+
+  return aliases[cleaned] || cleaned;
+}
+
 // ===== 起動時しりとり事前生成キャッシュ =====
 // key: `${listName}:${wordCount}`
 // value: 経路配列 [[word1, word2, ...], ...]
@@ -251,6 +277,10 @@ function loadWordData() {
     buildListIndexes(listName);
   }
 }
+
+console.log('Loaded word lists:', Object.keys(wordLists));
+console.log('Loaded word maps:', Object.keys(wordMap));
+``
 
 function getAllWords(listName) {
   return listIndexes[listName]?.allWords || [];
@@ -1449,11 +1479,18 @@ app.post('/api/shiritori', (req, res) => {
     advancedConditions
   } = req.body;
 
+  listName = normalizeListName(listName);
+
   const words = wordLists[listName];
   const map = wordMap[listName];
 
   if (!map || !words) {
-    return res.status(400).json({ error: '無効な単語リストです。' });
+    console.error('Invalid listName:', listName);
+    console.error('Available lists:', Object.keys(wordLists));
+
+    return res.status(400).json({
+      error: `無効な単語リストです: ${listName}`
+    });
   }
 
   firstChar = firstChar || null;
@@ -1707,6 +1744,9 @@ app.post('/api/wildcard_search', (req, res) => {
   const paging = normalizePaging(req.body.page, req.body.perPage);
 
   const { listName, searchText } = req.body;
+
+  listName = normalizeListName(listName);
+  
   const words = wordLists[listName];
 
   if (!words || !searchText) {
@@ -1738,6 +1778,9 @@ app.post('/api/substring_search', (req, res) => {
   const paging = normalizePaging(req.body.page, req.body.perPage);
 
   const { listName, searchText } = req.body;
+
+  listName = normalizeListName(listName);
+
   const words = wordLists[listName];
 
   if (!words || !searchText) {
