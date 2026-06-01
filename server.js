@@ -295,6 +295,8 @@ function getCachedRegex(pattern) {
   return regexCache[key];
 }
 
+
+
 // ===== キャッシュ =====
 function getSearchCacheKey(name, payload) {
   return `${name}:${JSON.stringify(payload)}`;
@@ -1734,13 +1736,12 @@ app.post('/api/wildcard_search', (req, res) => {
       const regex = getCachedRegex(searchText);
       const normalized = String(searchText).normalize('NFKC');
 
-      const pool = normalized.length
-        ? (wordsByLength[listName]?.[normalized.length] || [])
-        : words;
-
-      return {
-        results: pool.filter(word => regex.test(word))
-      };
+      // % がある場合は文字数が固定できないので全単語から検索する
+      // % がない場合だけ、従来通り文字数インデックスで高速化する
+      const pool =
+       normalized.length && !hasMultiWildcard(normalized)
+          ? (wordsByLength[listName]?.[normalized.length] || [])
+          : words;
     }
   );
 });
