@@ -295,6 +295,9 @@ function getCachedRegex(pattern) {
   return regexCache[key];
 }
 
+function hasMultiWildcard(pattern) {
+  return /[%％]/.test(String(pattern || '').normalize('NFKC'));
+}
 
 
 // ===== キャッシュ =====
@@ -1097,9 +1100,14 @@ function findWildcardShiritoriCombinations(
     }
 
     const normalizedPattern = String(pattern || '').normalize('NFKC');
-    const pool = normalizedPattern
-      ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
-      : allWords;
+
+// % がある場合は文字数が固定できないため全単語から候補を探す
+// % がない場合だけ文字数インデックスで絞り込む
+    const pool =
+      normalizedPattern && !hasMultiWildcard(normalizedPattern)
+        ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
+        : allWords;
+
 
     return pool.filter(word => regex.test(word));
   });
@@ -1736,12 +1744,16 @@ app.post('/api/wildcard_search', (req, res) => {
       const regex = getCachedRegex(searchText);
       const normalized = String(searchText).normalize('NFKC');
 
-      // % がある場合は文字数が固定できないので全単語から検索する
-      // % がない場合だけ、従来通り文字数インデックスで高速化する
+// % がある場合は文字数が固定できないので全単語から検索する
+// % がない場合だけ、従来通り文字数インデックスで高速化する
       const pool =
-       normalized.length && !hasMultiWildcard(normalized)
+        normalized.length && !hasMultiWildcard(normalized)
           ? (wordsByLength[listName]?.[normalized.length] || [])
           : words;
+
+      return {
+        results: pool.filter(word => regex.test(word))
+      };
     }
   );
 });
