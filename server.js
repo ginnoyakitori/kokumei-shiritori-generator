@@ -257,18 +257,31 @@ function getAllWords(listName) {
 }
 
 // ===== 正規表現 =====
-function patternToRegex(pattern) {
+
+ function patternToRegex(pattern) {
   if (!pattern || !String(pattern).trim()) return null;
 
-  let s = String(pattern)
-    .normalize('NFKC')
-    .replace(/[?？]/g, '\u0000');
+  const normalized = String(pattern).normalize('NFKC');
+  let regexString = '';
 
-  s = s
-    .replace(/[.*+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\u0000/g, '.');
+  for (const char of normalized) {
+    // ? または ？ は「任意の1文字」
+    if (char === '?' || char === '？') {
+      regexString += '.';
+      continue;
+    }
 
-  return new RegExp(`^${s}$`);
+    // % または ％ は「0文字以上の任意の文字列」
+    if (char === '%' || char === '％') {
+      regexString += '.*';
+      continue;
+    }
+
+    // 正規表現の特殊文字はエスケープ
+    regexString += char.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
+  }
+
+  return new RegExp(`^${regexString}$`);
 }
 
 function getCachedRegex(pattern) {
