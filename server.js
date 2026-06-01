@@ -311,113 +311,7 @@ function hasMultiWildcard(pattern) {
   return /[%％]/.test(String(pattern || '').normalize('NFKC'));
 }
 
-function isDigitPatternChar(char) {
-  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
-}
 
-function getWildcardPatternCandidatePool(listName, pattern, allWords) {
-  const normalizedPattern = String(pattern || '').normalize('NFKC');
-
-  if (!normalizedPattern.trim()) {
-    return allWords;
-  }
-
-  // % がある場合は文字数が固定できないため全単語を見る
-  if (hasMultiWildcard(normalizedPattern)) {
-    return allWords;
-  }
-
-  // ? や数字は1文字扱いなので、% がなければ文字数で絞り込める
-  return wordsByLength[listName]?.[normalizedPattern.length] || [];
-}
-
-/**
- * pattern と word が一致するかを、数字バインドを引き継ぎながら判定する。
- *
- * 例:
- * pattern: ?1?1?
- * word: エリトリア
- * bindings: {}
- * => [{ "1": "リ" }]
- *
- * 複数単語をまたぐ場合:
- * 既に bindings["1"] = "リ" なら、次の単語内の 1 も必ず "リ" になる。
- */
-function matchPatternWithGlobalDigitBindings(pattern, word, bindings = {}) {
-  const normalizedPattern = String(pattern || '').normalize('NFKC');
-
-  // 空パターンは「任意の単語」として扱う
-  if (!normalizedPattern.trim()) {
-    return [{ ...bindings }];
-  }
-
-  const patternChars = [...normalizedPattern];
-  const wordChars = [...String(word || '').normalize('NFKC')];
-
-  const results = [];
-
-  function backtrack(patternIndex, wordIndex, currentBindings) {
-    if (patternIndex === patternChars.length) {
-      if (wordIndex === wordChars.length) {
-        results.push({ ...currentBindings });
-      }
-      return;
-    }
-
-    const token = patternChars[patternIndex];
-
-    // % / ％ は「0文字以上の任意の文字列」
-    if (token === '%' || token === '％') {
-      for (let nextWordIndex = wordIndex; nextWordIndex <= wordChars.length; nextWordIndex++) {
-        backtrack(patternIndex + 1, nextWordIndex, currentBindings);
-      }
-      return;
-    }
-
-    // ここから先は1文字消費が必要
-    if (wordIndex >= wordChars.length) {
-      return;
-    }
-
-    const currentChar = wordChars[wordIndex];
-
-    // ? / ？ は「任意の1文字」
-    if (token === '?' || token === '？') {
-      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
-      return;
-    }
-
-    // 数字は「同じ数字なら同じ文字」
-    if (isDigitPatternChar(token)) {
-      const digit = token.normalize('NFKC');
-      const alreadyBoundChar = currentBindings[digit];
-
-      if (alreadyBoundChar !== undefined) {
-        if (alreadyBoundChar === currentChar) {
-          backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
-        }
-      } else {
-        const nextBindings = {
-          ...currentBindings,
-          [digit]: currentChar
-        };
-
-        backtrack(patternIndex + 1, wordIndex + 1, nextBindings);
-      }
-
-      return;
-    }
-
-    // 通常文字は完全一致
-    if (token === currentChar) {
-      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
-    }
-  }
-
-  backtrack(0, 0, { ...bindings });
-
-  return results;
-}
 
 // ===== キャッシュ =====
 function getSearchCacheKey(name, payload) {
@@ -1208,22 +1102,32 @@ function findWildcardShiritoriCombinations(
   requiredCharMode,
   listName
 ) {
+  const regexes = wordPatterns.map(getCachedRegex);
   const allWords = getAllWords(listName);
 
-  const candidates = wordPatterns.map(pattern => {
-    const pool = getWildcardPatternCandidatePool(listName, pattern, allWords);
+  const candidates = wordPatterns.map((pattern, index) => {
+    const regex = regexes[index];
 
-    // 事前に「単語単体として絶対に一致しないもの」は除外する。
-    // ただし数字の最終的な対応文字は経路全体で決まるので、
-    // 探索中にも再チェックする。
-    return pool.filter(word => {
-      return matchPatternWithGlobalDigitBindings(pattern, word, {}).length > 0;
-    });
+    if (!regex) {
+      return allWords;
+    }
+
+    const normalizedPattern = String(pattern || '').normalize('NFKC');
+
+// % がある場合は文字数が固定できないため全単語から候補を探す
+// % がない場合だけ文字数インデックスで絞り込む
+    const pool =
+      normalizedPattern && !hasMultiWildcard(normalizedPattern)
+        ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
+        : allWords;
+
+
+    return pool.filter(word => regex.test(word));
   });
 
   const results = [];
 
-  function backtrack(index, path, used, bindings) {
+  function backtrack(index, path, used) {
     if (index === candidates.length) {
       if (checkRequiredChars(path, requiredChars, requiredCharMode)) {
         results.push([...path]);
@@ -1231,15 +1135,9 @@ function findWildcardShiritoriCombinations(
       return;
     }
 
-    const pattern = wordPatterns[index];
-    const words = candidates[index];
+    for (const word of candidates[index]) {
+      if (used.has(word)) continue;
 
-    for (const word of words) {
-      if (used.has(word)) {
-        continue;
-      }
-
-      // しりとり接続チェック
       if (
         index > 0 &&
         getLastChar(path[path.length - 1]) !== getFirstChar(word)
@@ -1247,30 +1145,17 @@ function findWildcardShiritoriCombinations(
         continue;
       }
 
-      // ここで、複数単語をまたいだ数字バインドをチェックする
-      const nextBindingCandidates = matchPatternWithGlobalDigitBindings(
-        pattern,
-        word,
-        bindings
-      );
-
-      if (nextBindingCandidates.length === 0) {
-        continue;
-      }
-
       used.add(word);
       path.push(word);
 
-      for (const nextBindings of nextBindingCandidates) {
-        backtrack(index + 1, path, used, nextBindings);
-      }
+      backtrack(index + 1, path, used);
 
       path.pop();
       used.delete(word);
     }
   }
 
-  backtrack(0, [], new Set(), {});
+  backtrack(0, [], new Set());
 
   const seen = new Set();
 
