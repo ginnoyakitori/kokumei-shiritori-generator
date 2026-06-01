@@ -262,7 +262,13 @@ function getAllWords(listName) {
   if (!pattern || !String(pattern).trim()) return null;
 
   const normalized = String(pattern).normalize('NFKC');
+
   let regexString = '';
+
+  // 数字ごとに「初回はキャプチャ」「2回目以降は同じ文字への参照」にする
+  // 例: ?1?1? => ^.(.).\1.$
+  const digitGroupMap = Object.create(null);
+  let groupIndex = 1;
 
   for (const char of normalized) {
     // ? または ？ は「任意の1文字」
@@ -274,6 +280,18 @@ function getAllWords(listName) {
     // % または ％ は「0文字以上の任意の文字列」
     if (char === '%' || char === '％') {
       regexString += '.*';
+      continue;
+    }
+
+    // 0〜9 は「同じ数字なら同じ文字」
+    if (/^[0-9]$/.test(char)) {
+      if (!digitGroupMap[char]) {
+        digitGroupMap[char] = groupIndex;
+        regexString += '(.)';
+        groupIndex++;
+      } else {
+        regexString += `\\${digitGroupMap[char]}`;
+      }
       continue;
     }
 
