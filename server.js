@@ -317,7 +317,113 @@ function hasMultiWildcard(pattern) {
   return /[%％]/.test(String(pattern || '').normalize('NFKC'));
 }
 
+function isDigitPatternChar(char) {
+  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
+}
 
+function getWildcardPatternCandidatePool(listName, pattern, allWords) {
+  const normalizedPattern = String(pattern || '').normalize('NFKC');
+
+  if (!normalizedPattern.trim()) {
+    return allWords;
+  }
+
+  // % がある場合は文字数が固定できないため全単語を見る
+  if (hasMultiWildcard(normalizedPattern)) {
+    return allWords;
+  }
+
+  // ? や数字は1文字扱いなので、% がなければ文字数で絞り込める
+  return wordsByLength[listName]?.[normalizedPattern.length] || [];
+}
+
+/**
+ * pattern と word が一致するかを、数字バインドを引き継ぎながら判定する。
+ *
+ * 例:
+ * pattern: ?1?1?
+ * word: エリトリア
+ * bindings: {}
+ * => [{ "1": "リ" }]
+ *
+ * 複数単語をまたぐ場合:
+ * 既に bindings["1"] = "リ" なら、次の単語内の 1 も必ず "リ" になる。
+ */
+function matchPatternWithGlobalDigitBindings(pattern, word, bindings = {}) {
+  const normalizedPattern = String(pattern || '').normalize('NFKC');
+
+  // 空パターンは「任意の単語」として扱う
+  if (!normalizedPattern.trim()) {
+    return [{ ...bindings }];
+  }
+
+  const patternChars = [...normalizedPattern];
+  const wordChars = [...String(word || '').normalize('NFKC')];
+
+  const results = [];
+
+  function backtrack(patternIndex, wordIndex, currentBindings) {
+    if (patternIndex === patternChars.length) {
+      if (wordIndex === wordChars.length) {
+        results.push({ ...currentBindings });
+      }
+      return;
+    }
+
+    const token = patternChars[patternIndex];
+
+    // % / ％ は「0文字以上の任意の文字列」
+    if (token === '%' || token === '％') {
+      for (let nextWordIndex = wordIndex; nextWordIndex <= wordChars.length; nextWordIndex++) {
+        backtrack(patternIndex + 1, nextWordIndex, currentBindings);
+      }
+      return;
+    }
+
+    // ここから先は1文字消費が必要
+    if (wordIndex >= wordChars.length) {
+      return;
+    }
+
+    const currentChar = wordChars[wordIndex];
+
+    // ? / ？ は「任意の1文字」
+    if (token === '?' || token === '？') {
+      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
+      return;
+    }
+
+    // 数字は「同じ数字なら同じ文字」
+    if (isDigitPatternChar(token)) {
+      const digit = token.normalize('NFKC');
+      const alreadyBoundChar = currentBindings[digit];
+
+      if (alreadyBoundChar !== undefined) {
+        if (alreadyBoundChar === currentChar) {
+          backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
+        }
+      } else {
+        const nextBindings = {
+          ...currentBindings,
+          [digit]: currentChar
+        };
+
+        backtrack(patternIndex + 1, wordIndex + 1, nextBindings);
+      }
+
+      return;
+    }
+
+    // 通常文字は完全一致
+    if (token === currentChar) {
+      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
+    }
+  }
+
+  backtrack(0, 0, { ...bindings });
+
+  return results;
+}
 // ===== キャッシュ =====
 function getSearchCacheKey(name, payload) {
   return `${name}:${JSON.stringify(payload)}`;
