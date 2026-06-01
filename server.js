@@ -1213,32 +1213,22 @@ function findWildcardShiritoriCombinations(
   requiredCharMode,
   listName
 ) {
-  const regexes = wordPatterns.map(getCachedRegex);
   const allWords = getAllWords(listName);
 
-  const candidates = wordPatterns.map((pattern, index) => {
-    const regex = regexes[index];
+  const candidates = wordPatterns.map(pattern => {
+    const pool = getWildcardPatternCandidatePool(listName, pattern, allWords);
 
-    if (!regex) {
-      return allWords;
-    }
-
-    const normalizedPattern = String(pattern || '').normalize('NFKC');
-
-// % がある場合は文字数が固定できないため全単語から候補を探す
-// % がない場合だけ文字数インデックスで絞り込む
-    const pool =
-      normalizedPattern && !hasMultiWildcard(normalizedPattern)
-        ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
-        : allWords;
-
-
-    return pool.filter(word => regex.test(word));
+    // 事前に「単語単体として絶対に一致しないもの」は除外する。
+    // ただし数字の最終的な対応文字は経路全体で決まるので、
+    // 探索中にも再チェックする。
+    return pool.filter(word => {
+      return matchPatternWithGlobalDigitBindings(pattern, word, {}).length > 0;
+    });
   });
 
   const results = [];
 
-  function backtrack(index, path, used) {
+  function backtrack(index, path, used, bindings) {
     if (index === candidates.length) {
       if (checkRequiredChars(path, requiredChars, requiredCharMode)) {
         results.push([...path]);
@@ -1246,9 +1236,15 @@ function findWildcardShiritoriCombinations(
       return;
     }
 
-    for (const word of candidates[index]) {
-      if (used.has(word)) continue;
+    const pattern = wordPatterns[index];
+    const words = candidates[index];
 
+    for (const word of words) {
+      if (used.has(word)) {
+        continue;
+      }
+
+      // しりとり接続チェック
       if (
         index > 0 &&
         getLastChar(path[path.length - 1]) !== getFirstChar(word)
@@ -1256,17 +1252,30 @@ function findWildcardShiritoriCombinations(
         continue;
       }
 
+      // ここで、複数単語をまたいだ数字バインドをチェックする
+      const nextBindingCandidates = matchPatternWithGlobalDigitBindings(
+        pattern,
+        word,
+        bindings
+      );
+
+      if (nextBindingCandidates.length === 0) {
+        continue;
+      }
+
       used.add(word);
       path.push(word);
 
-      backtrack(index + 1, path, used);
+      for (const nextBindings of nextBindingCandidates) {
+        backtrack(index + 1, path, used, nextBindings);
+      }
 
       path.pop();
       used.delete(word);
     }
   }
 
-  backtrack(0, [], new Set());
+  backtrack(0, [], new Set(), {});
 
   const seen = new Set();
 
@@ -1278,21 +1287,6 @@ function findWildcardShiritoriCombinations(
       return true;
     })
     .sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-// ===== パターン前方一致 =====
-function matchesPatternPrefix(pattern, text) {
-  const p = String(pattern || '').normalize('NFKC');
-
-  if (text.length > p.length) return false;
-
-  for (let i = 0; i < text.length; i++) {
-    if (p[i] !== '?' && p[i] !== '？' && p[i] !== text[i]) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 // ===== ループ検索 =====
