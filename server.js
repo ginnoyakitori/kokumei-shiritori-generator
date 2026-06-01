@@ -1350,6 +1350,175 @@ function findLoopShiritori(map, pattern, listName) {
     .sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
+function isDigitPatternChar(char) {
+  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
+}
+
+function patternHasMultiWildcard(pattern) {
+  return /[%％]/.test(String(pattern || '').normalize('NFKC'));
+}
+
+/**
+ * チェーン検索用:
+ * pattern に対して text が「途中まで一致しているか」を判定する。
+ *
+ * 数字はチェーン全体で共有される。
+ * 例:
+ * pattern: ?1?1?
+ * text: エリト
+ * bindings: {}
+ * => 1 = リ として prefix OK
+ */
+function matchChainPatternPrefixWithBindings(pattern, text, bindings = {}) {
+  const patternChars = [...String(pattern || '').normalize('NFKC')];
+  const textChars = [...String(text || '').normalize('NFKC')];
+
+  const results = [];
+
+  function backtrack(patternIndex, textIndex, currentBindings) {
+    // text を全部読めたら「ここまでは一致」とみなす
+    if (textIndex === textChars.length) {
+      results.push({ ...currentBindings });
+      return;
+    }
+
+    // pattern が先に尽きたら不一致
+    if (patternIndex === patternChars.length) {
+      return;
+    }
+
+    const token = patternChars[patternIndex];
+    const currentChar = textChars[textIndex];
+
+    // % / ％ は 0文字以上の任意文字列
+    if (token === '%' || token === '％') {
+      // 0文字消費
+      backtrack(patternIndex + 1, textIndex, currentBindings);
+
+      // 1文字以上消費
+      for (let nextTextIndex = textIndex + 1; nextTextIndex <= textChars.length; nextTextIndex++) {
+        backtrack(patternIndex + 1, nextTextIndex, currentBindings);
+      }
+
+      return;
+    }
+
+    // ? / ？ は任意の1文字
+    if (token === '?' || token === '？') {
+      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+      return;
+    }
+
+    // 数字は、同じ数字なら同じ文字
+    if (isDigitPatternChar(token)) {
+      const digit = token.normalize('NFKC');
+      const boundChar = currentBindings[digit];
+
+      if (boundChar !== undefined) {
+        if (boundChar === currentChar) {
+          backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+        }
+      } else {
+        backtrack(
+          patternIndex + 1,
+          textIndex + 1,
+          {
+            ...currentBindings,
+            [digit]: currentChar
+          }
+        );
+      }
+
+      return;
+    }
+
+    // 通常文字は完全一致
+    if (token === currentChar) {
+      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+    }
+  }
+
+  backtrack(0, 0, { ...bindings });
+
+  return results;
+}
+
+/**
+ * チェーン検索用:
+ * pattern と text が最後まで完全一致するかを判定する。
+ *
+ * 数字はチェーン全体で共有される。
+ */
+function matchChainPatternFullWithBindings(pattern, text, bindings = {}) {
+  const patternChars = [...String(pattern || '').normalize('NFKC')];
+  const textChars = [...String(text || '').normalize('NFKC')];
+
+  const results = [];
+
+  function backtrack(patternIndex, textIndex, currentBindings) {
+    if (patternIndex === patternChars.length) {
+      if (textIndex === textChars.length) {
+        results.push({ ...currentBindings });
+      }
+      return;
+    }
+
+    const token = patternChars[patternIndex];
+
+    // % / ％ は 0文字以上の任意文字列
+    if (token === '%' || token === '％') {
+      for (let nextTextIndex = textIndex; nextTextIndex <= textChars.length; nextTextIndex++) {
+        backtrack(patternIndex + 1, nextTextIndex, currentBindings);
+      }
+      return;
+    }
+
+    if (textIndex >= textChars.length) {
+      return;
+    }
+
+    const currentChar = textChars[textIndex];
+
+    // ? / ？ は任意の1文字
+    if (token === '?' || token === '？') {
+      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+      return;
+    }
+
+    // 数字は、同じ数字なら同じ文字
+    if (isDigitPatternChar(token)) {
+      const digit = token.normalize('NFKC');
+      const boundChar = currentBindings[digit];
+
+      if (boundChar !== undefined) {
+        if (boundChar === currentChar) {
+          backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+        }
+      } else {
+        backtrack(
+          patternIndex + 1,
+          textIndex + 1,
+          {
+            ...currentBindings,
+            [digit]: currentChar
+          }
+        );
+      }
+
+      return;
+    }
+
+    // 通常文字は完全一致
+    if (token === currentChar) {
+      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+    }
+  }
+
+  backtrack(0, 0, { ...bindings });
+
+  return results;
+}
+
 // ===== チェーン検索 =====
 function findChainShiritori(
   map,
@@ -1360,28 +1529,51 @@ function findChainShiritori(
   listName
 ) {
   const p = String(pattern || '').normalize('NFKC');
-  const regex = getCachedRegex(p);
-  const L = p.length;
+
+  // % が含まれていない場合は、パターン全体の文字数が固定される
+  const fixedLengthMode = !patternHasMultiWildcard(p);
+  const fixedLength = p.length;
+
   const results = [];
 
-  function backtrack(path, used, currentText) {
-    if (!matchesPatternPrefix(p, currentText)) {
+  function backtrack(path, used, currentText, bindings) {
+    // 現在の文字列が、パターンの途中まで一致しているか確認
+    // 数字の対応文字も bindings として引き継ぐ
+    const prefixBindingCandidates = matchChainPatternPrefixWithBindings(
+      p,
+      currentText,
+      bindings
+    );
+
+    if (prefixBindingCandidates.length === 0) {
       return;
     }
 
-    if (currentText.length === L) {
-      if (
-        regex.test(currentText) &&
-        checkRequiredChars(path, requiredChars, requiredCharMode) &&
-        checkExcludeChars(path, excludeChars)
-      ) {
-        results.push([...path]);
+    // 現在の文字列がパターンに完全一致しているか確認
+    for (const prefixBindings of prefixBindingCandidates) {
+      const fullBindingCandidates = matchChainPatternFullWithBindings(
+        p,
+        currentText,
+        prefixBindings
+      );
+
+      if (fullBindingCandidates.length > 0) {
+        if (
+          checkRequiredChars(path, requiredChars, requiredCharMode) &&
+          checkExcludeChars(path, excludeChars)
+        ) {
+          results.push([...path]);
+        }
+
+        // % がない固定長パターンなら、完全一致後に伸ばす必要はない
+        if (fixedLengthMode) {
+          return;
+        }
       }
-
-      return;
     }
 
-    if (currentText.length > L) {
+    // % がない場合、パターン長以上ならこれ以上伸ばさない
+    if (fixedLengthMode && currentText.length >= fixedLength) {
       return;
     }
 
@@ -1389,18 +1581,37 @@ function findChainShiritori(
     const nextWords = wordsByFirstChar[listName]?.[last] || [];
 
     for (const next of nextWords) {
-      if (used.has(next)) continue;
-      if (containsAnyExcludedChar(next, excludeChars)) continue;
+      if (used.has(next)) {
+        continue;
+      }
+
+      if (containsAnyExcludedChar(next, excludeChars)) {
+        continue;
+      }
 
       const nextText = currentText + next;
 
-      if (nextText.length > L) continue;
-      if (!matchesPatternPrefix(p, nextText)) continue;
+      // % がない場合は固定長を超えたら不可
+      if (fixedLengthMode && nextText.length > fixedLength) {
+        continue;
+      }
+
+      const nextBindingCandidates = matchChainPatternPrefixWithBindings(
+        p,
+        nextText,
+        bindings
+      );
+
+      if (nextBindingCandidates.length === 0) {
+        continue;
+      }
 
       used.add(next);
       path.push(next);
 
-      backtrack(path, used, nextText);
+      for (const nextBindings of nextBindingCandidates) {
+        backtrack(path, used, nextText, nextBindings);
+      }
 
       path.pop();
       used.delete(next);
@@ -1408,11 +1619,32 @@ function findChainShiritori(
   }
 
   for (const start of getAllWords(listName)) {
-    if (start.length > L) continue;
-    if (containsAnyExcludedChar(start, excludeChars)) continue;
-    if (!matchesPatternPrefix(p, start)) continue;
+    if (containsAnyExcludedChar(start, excludeChars)) {
+      continue;
+    }
 
-    backtrack([start], new Set([start]), start);
+    if (fixedLengthMode && start.length > fixedLength) {
+      continue;
+    }
+
+    const bindingCandidates = matchChainPatternPrefixWithBindings(
+      p,
+      start,
+      {}
+    );
+
+    if (bindingCandidates.length === 0) {
+      continue;
+    }
+
+    for (const bindings of bindingCandidates) {
+      backtrack(
+        [start],
+        new Set([start]),
+        start,
+        bindings
+      );
+    }
   }
 
   const seen = new Set();
