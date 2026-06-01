@@ -252,7 +252,13 @@ function loadWordData() {
   }
 }
 
-function patternToRegex(pattern) {
+function getAllWords(listName) {
+  return listIndexes[listName]?.allWords || [];
+}
+
+// ===== 正規表現 =====
+
+ function patternToRegex(pattern) {
   if (!pattern || !String(pattern).trim()) return null;
 
   const normalized = String(pattern).normalize('NFKC');
@@ -310,7 +316,6 @@ function getCachedRegex(pattern) {
 function hasMultiWildcard(pattern) {
   return /[%％]/.test(String(pattern || '').normalize('NFKC'));
 }
-
 
 
 // ===== キャッシュ =====
