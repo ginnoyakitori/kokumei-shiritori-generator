@@ -257,31 +257,18 @@ function getAllWords(listName) {
 }
 
 // ===== 正規表現 =====
-
- function patternToRegex(pattern) {
+function patternToRegex(pattern) {
   if (!pattern || !String(pattern).trim()) return null;
 
-  const normalized = String(pattern).normalize('NFKC');
-  let regexString = '';
+  let s = String(pattern)
+    .normalize('NFKC')
+    .replace(/[?？]/g, '\u0000');
 
-  for (const char of normalized) {
-    // ? または ？ は「任意の1文字」
-    if (char === '?' || char === '？') {
-      regexString += '.';
-      continue;
-    }
+  s = s
+    .replace(/[.*+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\u0000/g, '.');
 
-    // % または ％ は「0文字以上の任意の文字列」
-    if (char === '%' || char === '％') {
-      regexString += '.*';
-      continue;
-    }
-
-    // 正規表現の特殊文字はエスケープ
-    regexString += char.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
-  }
-
-  return new RegExp(`^${regexString}$`);
+  return new RegExp(`^${s}$`);
 }
 
 function getCachedRegex(pattern) {
@@ -294,12 +281,6 @@ function getCachedRegex(pattern) {
 
   return regexCache[key];
 }
-
-function hasMultiWildcard(pattern) {
-  return /[%％]/.test(String(pattern || '').normalize('NFKC'));
-}
-
-
 
 // ===== キャッシュ =====
 function getSearchCacheKey(name, payload) {
@@ -1101,14 +1082,9 @@ function findWildcardShiritoriCombinations(
     }
 
     const normalizedPattern = String(pattern || '').normalize('NFKC');
-
-      // % がある場合は文字数が固定できないため全単語から候補を探す
-      // % がない場合だけ文字数インデックスで絞り込む
-      const pool =
-        normalizedPattern && !hasMultiWildcard(normalizedPattern)
-          ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
-          : allWords;
-
+    const pool = normalizedPattern
+      ? (wordsByLength[listName]?.[normalizedPattern.length] || [])
+      : allWords;
 
     return pool.filter(word => regex.test(word));
   });
@@ -1745,12 +1721,13 @@ app.post('/api/wildcard_search', (req, res) => {
       const regex = getCachedRegex(searchText);
       const normalized = String(searchText).normalize('NFKC');
 
-      // % がある場合は文字数が固定できないので全単語から検索する
-      // % がない場合だけ、従来通り文字数インデックスで高速化する
-      const pool =
-       normalized.length && !hasMultiWildcard(normalized)
-          ? (wordsByLength[listName]?.[normalized.length] || [])
-          : words;
+      const pool = normalized.length
+        ? (wordsByLength[listName]?.[normalized.length] || [])
+        : words;
+
+      return {
+        results: pool.filter(word => regex.test(word))
+      };
     }
   );
 });
