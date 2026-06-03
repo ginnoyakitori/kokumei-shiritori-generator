@@ -40,21 +40,6 @@
                 <option value="substring">単語検索（部分一致）</option>
             </select>
         </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label for="resultPage">ページ</label>
-                <input type="number" id="resultPage" value="1" min="1">
-            </div>
-            <div class="form-group">
-                <label for="resultsPerPage">表示件数</label>
-                <input type="number" id="resultsPerPage" value="100" min="1" max="500">
-            </div>
-            <div class="form-group" style="align-self:flex-end;">
-                <button type="button" id="prevPageBtn" class="secondary">前へ</button>
-                <button type="button" id="nextPageBtn" class="secondary">次へ</button>
-            </div>
-        </div>
     </section>
 
     <section class="chat-settings" aria-labelledby="chatSettingsTitle">
@@ -187,17 +172,6 @@
             <div class="form-group">
                 <label>合計文字数</label>
                 <input type="number" id="shiritoriTotalLength" placeholder="例: 15" min="1">
-            </div>
-            <div class="form-group">
-                <label>出力オプション</label>
-                <div class="radio-group">
-                    <input type="radio" id="outputPath" name="outputType" value="path" checked>
-                    <label for="outputPath">経路表示（すべて表示）</label>
-                    <input type="radio" id="outputFirstCount" name="outputType" value="firstCharCount">
-                    <label for="outputFirstCount">開始文字別集計</label>
-                    <input type="radio" id="outputLastCount" name="outputType" value="lastCharCount">
-                    <label for="outputLastCount">終了文字別集計</label>
-                </div>
             </div>
             <div class="form-group">
                 <div class="checkbox-group">
@@ -430,6 +404,20 @@
 
     <section class="results-container">
         <h3>検索結果</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="resultPage">ページ</label>
+                <input type="number" id="resultPage" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="resultsPerPage">表示件数</label>
+                <input type="number" id="resultsPerPage" value="100" min="1" max="500">
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <button type="button" id="prevPageBtn" class="secondary">前へ</button>
+                <button type="button" id="nextPageBtn" class="secondary">次へ</button>
+            </div>
+        </div>
         <div id="results">
             <p class="placeholder">ここに結果が表示されます。</p>
         </div>
