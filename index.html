@@ -40,10 +40,6 @@
                 <option value="substring">単語検索（部分一致）</option>
             </select>
         </div>
-
-        
-           
-      
     </section>
 
     <section class="chat-settings" aria-labelledby="chatSettingsTitle">
@@ -60,59 +56,59 @@
     <section class="advanced-settings" aria-labelledby="advancedConditionsTitle">
         <h2 id="advancedConditionsTitle">高度条件</h2>
         <div class="form-row">
-            <div class="form-group">
-                <label for="dakutenCountMode">濁音数</label>
-                <select id="dakutenCountMode">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="dakutenCountMode" style="display: inline; margin-right: 5px;">濁音数:</label>
+                <select id="dakutenCountMode" style="width: 70px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="exact">ちょうど</option>
                     <option value="min">以上</option>
                     <option value="max">以下</option>
                 </select>
-                <input type="number" id="dakutenCountValue" min="0" placeholder="個" style="margin-top:5px;">
+                <input type="number" id="dakutenCountValue" min="0" placeholder="個" style="width: 60px; margin-left: 3px; display: inline-block;">
             </div>
-            <div class="form-group">
-                <label for="handakutenCountMode">半濁音数</label>
-                <select id="handakutenCountMode">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="handakutenCountMode" style="display: inline; margin-right: 5px;">半濁音数:</label>
+                <select id="handakutenCountMode" style="width: 70px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="exact">ちょうど</option>
                     <option value="min">以上</option>
                     <option value="max">以下</option>
                 </select>
-                <input type="number" id="handakutenCountValue" min="0" placeholder="個" style="margin-top:5px;">
+                <input type="number" id="handakutenCountValue" min="0" placeholder="個" style="width: 60px; margin-left: 3px; display: inline-block;">
             </div>
-            <div class="form-group">
-                <label for="smallKanaCountMode">小さい文字数</label>
-                <select id="smallKanaCountMode">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="smallKanaCountMode" style="display: inline; margin-right: 5px;">小文字数:</label>
+                <select id="smallKanaCountMode" style="width: 70px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="exact">ちょうど</option>
                     <option value="min">以上</option>
                     <option value="max">以下</option>
                 </select>
-                <input type="number" id="smallKanaCountValue" min="0" placeholder="個" style="margin-top:5px;">
+                <input type="number" id="smallKanaCountValue" min="0" placeholder="個" style="width: 60px; margin-left: 3px; display: inline-block;">
             </div>
         </div>
         <div class="form-row">
-            <div class="form-group">
-                <label for="repeatedCharWordCountMode">重複文字あり単語数</label>
-                <select id="repeatedCharWordCountMode">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="repeatedCharWordCountMode" style="display: inline; margin-right: 5px;">重複文字数:</label>
+                <select id="repeatedCharWordCountMode" style="width: 70px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="exact">ちょうど</option>
                     <option value="min">以上</option>
                     <option value="max">以下</option>
                 </select>
-                <input type="number" id="repeatedCharWordCountValue" min="0" placeholder="個" style="margin-top:5px;">
+                <input type="number" id="repeatedCharWordCountValue" min="0" placeholder="個" style="width: 60px; margin-left: 3px; display: inline-block;">
             </div>
-            <div class="form-group">
-                <label for="hasPrecedingWord">前に続けられる単語</label>
-                <select id="hasPrecedingWord">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="hasPrecedingWord" style="display: inline; margin-right: 5px;">前に続ける:</label>
+                <select id="hasPrecedingWord" style="width: 80px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="true">あり</option>
                     <option value="false">なし</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="hasSucceedingWord">後に続けられる単語</label>
-                <select id="hasSucceedingWord">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="hasSucceedingWord" style="display: inline; margin-right: 5px;">後に続ける:</label>
+                <select id="hasSucceedingWord" style="width: 80px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="true">あり</option>
                     <option value="false">なし</option>
@@ -120,9 +116,9 @@
             </div>
         </div>
         <div class="form-row">
-            <div class="form-group">
-                <label for="lengthPattern">文字数列パターン</label>
-                <select id="lengthPattern">
+            <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label for="lengthPattern" style="display: inline; margin-right: 5px;">文字数列:</label>
+                <select id="lengthPattern" style="width: 120px; display: inline-block;">
                     <option value="">指定なし</option>
                     <option value="increasing">単調増加</option>
                     <option value="nondecreasing">広義増加</option>
@@ -132,8 +128,8 @@
                     <option value="geometric">等比数列</option>
                 </select>
             </div>
-            <div class="form-group" style="align-self:flex-end;">
-                <button type="button" id="clearAdvancedConditionsBtn" class="secondary">高度条件をリセット</button>
+            <div class="form-group" style="flex: 1; min-width: 200px; text-align: right;">
+                <button type="button" id="clearAdvancedConditionsBtn" class="secondary">リセット</button>
             </div>
         </div>
     </section>
@@ -177,8 +173,20 @@
                 <label>合計文字数</label>
                 <input type="number" id="shiritoriTotalLength" placeholder="例: 15" min="1">
             </div>
-            
-            
+            <div class="form-group">
+                <label>出力オプション</label>
+                <div style="margin-top: 8px;">
+                    <label style="display: inline; margin-right: 15px;">
+                        <span style="margin-right: 5px;">経路表示（すべて表示）</span>
+                    </label>
+                    <label style="display: inline; margin-right: 15px;">
+                        <span style="margin-right: 5px;">開始文字別集計</span>
+                    </label>
+                    <label style="display: inline;">
+                        <span style="margin-right: 5px;">終了文字別集計</span>
+                    </label>
+                </div>
+            </div>
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="uniqueWordLengths">
@@ -193,33 +201,6 @@
             </div>
             <button class="search-btn primary">しりとり経路を検索</button>
         </div>
-
-
-        <section class="results-container">
-       <h3>検索結果</h3>
-        <div class="form-group">
-            <label for="resultPage">ページ</label>
-            <input type="number" id="resultPage" value="1" min="1">
-        </div>
-
-        <div class="form-group">
-            <label for="resultsPerPage">表示件数</label>
-            <input type="number" id="resultsPerPage" value="100" min="1" max="500">
-        </div>
-
-        <div class="form-group" style="align-self:flex-end;">
-            <button type="button" id="prevPageBtn" class="secondary">前へ</button>
-            <button type="button" id="nextPageBtn" class="secondary">次へ</button>
-        </div>
-    </div>
-</section>
-
-
-    <div id="results">
-        <p class="placeholder">ここに結果が表示されます。</p>
-    </div>
-
-
 
         <div id="wildcardShiritoriMode" class="mode-section">
             <h2>？文字指定しりとり検索</h2>
@@ -437,6 +418,20 @@
 
     <section class="results-container">
         <h3>検索結果</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="resultPage">ページ</label>
+                <input type="number" id="resultPage" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="resultsPerPage">表示件数</label>
+                <input type="number" id="resultsPerPage" value="100" min="1" max="500">
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <button type="button" id="prevPageBtn" class="secondary">前へ</button>
+                <button type="button" id="nextPageBtn" class="secondary">次へ</button>
+            </div>
+        </div>
         <div id="results">
             <p class="placeholder">ここに結果が表示されます。</p>
         </div>
