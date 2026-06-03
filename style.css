@@ -34,6 +34,78 @@ h1 {
     text-align: center;
 }
 
+.chat-settings {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid #d8e1e8;
+    border-radius: 8px;
+    background-color: #f7fafc;
+}
+
+.chat-settings h2 {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+}
+
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 4px 2px;
+    margin-bottom: 10px;
+}
+
+.chat-message {
+    max-width: 86%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.chat-message.user {
+    align-self: flex-end;
+    background-color: #dff3e4;
+}
+
+.chat-message.assistant {
+    align-self: flex-start;
+    background-color: #eef3f7;
+}
+
+.chat-message.error {
+    align-self: flex-start;
+    background-color: #fdecea;
+    color: #9b1c1c;
+}
+
+.chat-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.chat-input-row input {
+    flex: 1;
+}
+
+.chat-input-row button {
+    min-width: 84px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 5px;
+    background-color: #2f80ed;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.chat-input-row button:hover {
+    background-color: #1f6fd3;
+}
+
 .mode-section {
     display: none;
     padding: 20px;
@@ -172,9 +244,9 @@ select {
     flex-direction: row;
     gap: 10px;
     flex-wrap: wrap;
-    margin-top: 8px;
 }
 
+/* ラジオボタンを非表示 */
 .radio-group input[type="radio"] {
     display: none;
 }
@@ -183,25 +255,22 @@ select {
     display: inline-block;
     font-weight: normal;
     margin-bottom: 0;
-    padding: 10px 20px;
-    border: none;
+    padding: 8px 16px;
+    border: 2px solid #ccc;
     border-radius: 5px;
     cursor: pointer;
-    background-color: #f0f0f0;
-    color: #333;
+    background-color: #f9f9f9;
     transition: all 0.3s;
-    flex: 1;
-    text-align: center;
-    min-width: 100px;
 }
 
 .radio-group input[type="radio"]:checked + label {
     background-color: #4CAF50;
     color: white;
+    border-color: #45a049;
 }
 
 .radio-group label:hover {
-    background-color: #e0e0e0;
+    background-color: #e8f5e9;
 }
 
 .radio-group input[type="radio"]:checked + label:hover {
@@ -261,16 +330,23 @@ select {
 /* ラジオボタンとチェックボックスのスタイル */
 .checkbox-group {
     margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .checkbox-group input[type="checkbox"] {
-    margin-right: 8px;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    margin: 0;
 }
 
 .checkbox-group label {
     display: inline;
     font-weight: normal;
     margin-bottom: 0;
+    cursor: pointer;
 }
 
 /* パターンアイテムのスタイル */
@@ -320,6 +396,12 @@ select {
         width: 100%;
         text-align: center;
     }
+    .chat-input-row {
+        flex-direction: column;
+    }
+    .chat-input-row button {
+        width: 100%;
+    }
 }
 
 /* プレースホルダー */
@@ -328,4 +410,55 @@ select {
     color: #999;
     padding: 20px;
     font-style: italic;
+}
+
+/* ===== 自動生成モード用スタイル ===== */
+
+/* 条件グループ */
+.auto-condition-group {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 5px;
+    background-color: #fafafa;
+}
+
+.condition-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 10px;
+}
+
+.condition-header h3 {
+    margin: 0;
+    font-size: 1em;
+    color: #333;
+    flex-grow: 1;
+}
+
+.condition-mode-select {
+    width: auto;
+    flex-shrink: 0;
+    min-width: 120px;
+    padding: 6px 10px;
+    font-size: 0.95em;
+}
+
+.condition-input-container {
+    display: none;
+}
+
+.condition-input-container input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95em;
+}
+
+/* 初期状態で固定状態の入力を表示 */
+.auto-condition-group:has(.condition-mode-select:not([value="none"])) .condition-input-container {
+    display: block;
 }
