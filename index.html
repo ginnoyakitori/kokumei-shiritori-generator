@@ -175,16 +175,10 @@
             </div>
             <div class="form-group">
                 <label>出力オプション</label>
-                <div style="margin-top: 8px;">
-                    <label style="display: inline; margin-right: 15px;">
-                        <span style="margin-right: 5px;">経路表示（すべて表示）</span>
-                    </label>
-                    <label style="display: inline; margin-right: 15px;">
-                        <span style="margin-right: 5px;">開始文字別集計</span>
-                    </label>
-                    <label style="display: inline;">
-                        <span style="margin-right: 5px;">終了文字別集計</span>
-                    </label>
+                <div style="margin-top: 8px; display: flex; gap: 8px;">
+                    <button type="button" id="outputPathBtn" class="secondary" style="flex: 1;">経路表示（すべて表示）</button>
+                    <button type="button" id="outputFirstCountBtn" class="secondary" style="flex: 1;">開始文字別集計</button>
+                    <button type="button" id="outputLastCountBtn" class="secondary" style="flex: 1;">終了文字別集計</button>
                 </div>
             </div>
             <div class="form-group">
