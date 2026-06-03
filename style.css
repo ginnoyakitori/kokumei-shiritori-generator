@@ -172,32 +172,36 @@ select {
     flex-direction: row;
     gap: 10px;
     flex-wrap: wrap;
+    margin-top: 8px;
 }
 
 .radio-group input[type="radio"] {
-    margin-right: 5px;
+    display: none;
 }
 
 .radio-group label {
-    display: inline;
+    display: inline-block;
     font-weight: normal;
     margin-bottom: 0;
-    padding: 8px 16px;
-    border: 2px solid #ccc;
+    padding: 10px 20px;
+    border: none;
     border-radius: 5px;
     cursor: pointer;
-    background-color: #f9f9f9;
+    background-color: #f0f0f0;
+    color: #333;
     transition: all 0.3s;
+    flex: 1;
+    text-align: center;
+    min-width: 100px;
 }
 
 .radio-group input[type="radio"]:checked + label {
     background-color: #4CAF50;
     color: white;
-    border-color: #45a049;
 }
 
 .radio-group label:hover {
-    background-color: #e8f5e9;
+    background-color: #e0e0e0;
 }
 
 .radio-group input[type="radio"]:checked + label:hover {
