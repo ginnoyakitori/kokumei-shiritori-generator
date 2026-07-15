@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const smallKanaCount = parseNumberRule(text, [
             { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
-            { pattern: /[「\"]?[ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ][」\"]?などの小さい文字(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
+            { pattern: /[「\"]?[ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ][」\"]?などの小さい文字(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s[...]
         ]);
         if (smallKanaCount) advanced.smallKanaCount = smallKanaCount;
 
@@ -400,8 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
         parsed.excludeChars = toCharList(excludeValue);
 
         const patternValue = getMatch(text, [
-            /(?:パターン|形)(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z?？]+)/,
-            /([ァ-ンーぁ-んA-Za-z?？]*[?？][ァ-ンーぁ-んA-Za-z?？]*)/
+            /(?:パターン|形)(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z?？%％]+)/,
+            /([ァ-ンーぁ-んA-Za-z?？%％]*[?？%％][ァ-ンーぁ-んA-Za-z?？%％]*)/
         ]);
         if (patternValue) parsed.pattern = patternValue;
 
@@ -543,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (parsed.pattern) setVal('chainPattern', parsed.pattern);
             if (parsed.includeChars?.length) setVal('chainRequiredChars', parsed.includeChars.join(','));
             if (parsed.excludeChars?.length) setVal('chainExcludeChars', parsed.excludeChars.join(','));
+            if (parsed.totalLength) setVal('chainTotalLength', parsed.totalLength);
             return;
         }
 
@@ -786,6 +787,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const patternVal = getVal('chainPattern').trim();
                     const requiredStr = getVal('chainRequiredChars');
                     const excludeStr = getVal('chainExcludeChars');
+                    const totalLengthVal = getVal('chainTotalLength');
 
                     if (!patternVal) {
                         resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
@@ -798,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         requiredChars: requiredStr ? requiredStr.split(',').map(c => c.trim()) : null,
                         excludeChars: excludeStr ? excludeStr.split(',').map(c => c.trim()) : null,
                         requiredCharMode: getChecked('chainRequiredCharExactly') ? 'exactly' : 'atLeast',
+                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
                         advancedConditions: getAdvancedConditionsForRequest()
                     };
 
