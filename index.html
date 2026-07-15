@@ -256,31 +256,31 @@
             <p class="description">パターンと必須文字で条件を指定して、しりとりの経路を探します。（輪にしない）</p>
             
             <div class="form-group">
-                <label>パターン（?で任意の1文字）</label>
-                <input type="text" id="chainPattern" placeholder="例: ？？？？ゴ？？ト">
-            </div>
+    <label>パターン（?で任意の1文字、%で0文字以上、同じ数字は同じ文字）</label>
+    <input type="text" id="chainPattern" placeholder="例: ？？1？1%ト">
+</div>
 
-            <div class="form-group">
-                <label>必須文字（含める文字）</label>
-                <input type="text" id="chainRequiredChars" placeholder="例: ス,パ（カンマ区切り）">
-            </div>
+<div class="form-group">
+    <label>必須文字（含める文字）</label>
+    <input type="text" id="chainRequiredChars" placeholder="例: ス,パ（カンマ区切り）">
+</div>
 
-            <div class="form-group">
-                <label>除外文字</label>
-                <input type="text" id="chainExcludeChars" placeholder="例: ワ（カンマ区切り）">
-            </div>
+<div class="form-group">
+    <label>除外文字</label>
+    <input type="text" id="chainExcludeChars" placeholder="例: ワ（カンマ区切り）">
+</div>
 
-            <div class="form-group">
-                <label>合計文字数</label>
-                <input type="number" id="chainTotalLength" placeholder="例: 15" min="1">
-            </div>
+<div class="form-group">
+    <label>合計文字数</label>
+    <input type="number" id="chainTotalLength" placeholder="例: 15" min="1">
+</div>
 
-            <div class="form-group">
-                <label>単語の文字数パターン</label>
-                <input type="text" id="chainWordLengthPattern" placeholder="例: 3,4,5（カンマ区切り）">
-                <small>各単語の文字数を指定します。例えば「3,4,5」なら最初の単語は3文字、次が4文字、最後が5文字となります。</small>
-            </div>
-
+<div class="form-group">
+    <div class="checkbox-group">
+        <input type="checkbox" id="chainRequiredCharExactly">
+        <label for="chainRequiredCharExactly">必須文字をちょうど指定回数使う</label>
+    </div>
+</div>
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="chainRequiredCharExactly">

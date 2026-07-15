@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- 共通要素の取得 ---
     const modeSelect = document.getElementById('modeSelect');
-    const listNameSelect = document.getElementById('listName');
+    const listNameSelect = document.getElementById('listName'); // 共通リスト
     const resultsDiv = document.getElementById('results');
     const searchButtons = document.querySelectorAll('.search-btn');
     const resultPageInput = document.getElementById('resultPage');
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         substring: document.getElementById('substringMode')
     };
 
-    // ヘルパー関数
+    // ヘルパー関数: 要素が存在すれば値を、なければデフォルト値を返す
     const getVal = (id) => document.getElementById(id)?.value || '';
     const getChecked = (id) => document.getElementById(id)?.checked || false;
     const setVal = (id, value) => {
@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (button) button.click();
     };
 
-    // --- ビュー切り替えロジック ---
+    // --- 1. ビュー切り替えロジック ---
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
         Object.keys(modeSections).forEach(mode => {
@@ -54,22 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-
-    // 初期表示
-    updateModeView();
-
-    // モード切り替えイベント（useCapture: trueで確実に実行）
+    modeSelect.addEventListener('change', updateModeView);
     modeSelect.addEventListener('change', () => {
-        updateModeView();
         if (resultPageInput) resultPageInput.value = '1';
-    }, true);
-
-    // リスト選択変更時
+    });
     listNameSelect.addEventListener('change', () => {
         if (resultPageInput) resultPageInput.value = '1';
     });
-
-    // ページング
     if (prevPageBtn) {
         prevPageBtn.addEventListener('click', () => {
             const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
@@ -85,8 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
             runActiveSearch();
         });
     }
+    updateModeView();
 
-    // --- 動的フィールド管理：？文字指定しりとり ---
+    // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
     const wordPatternList = document.getElementById('wordPatternList');
     const addPatternBtn = document.getElementById('addPatternBtn');
 
@@ -107,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         wordPatternList.addEventListener('click', (e) => {
             if (e.target.classList.contains('remove-pattern-btn')) {
                 e.target.closest('.pattern-item').remove();
+                // ラベル番号の振り直し
                 wordPatternList.querySelectorAll('.pattern-item').forEach((item, index) => {
                     const label = item.querySelector('.label');
                     if (label) label.textContent = `${index + 1}番目:`;
@@ -115,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 動的フィールド管理：単語数指定しりとり ---
+    // --- 3. 動的フィールド管理：単語数指定しりとり (wordCountShiritori) ---
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
 
@@ -158,14 +151,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     if (wordCountTypeSelect) {
-        wordCountTypeSelect.addEventListener('change', updateWordCountNoneOption);
+        wordCountTypeSelect.addEventListener('change', () => {
+            updateWordCountNoneOption();
+        });
     }
     if (shiritoriTotalLengthInput) {
-        shiritoriTotalLengthInput.addEventListener('input', updateWordCountNoneOption);
+        shiritoriTotalLengthInput.addEventListener('input', () => {
+            updateWordCountNoneOption();
+        });
     }
     updateWordCountNoneOption();
 
-    // --- 自動生成モード：条件モード切り替え ---
+    // --- 3.5 自動生成モード：条件モード切り替え ---
     const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
 
     const updateAutoConditionRow = (select) => {
@@ -202,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         select.addEventListener('change', (e) => updateAutoConditionRow(e.target));
     });
 
-    // --- 条件チャット ---
+    // --- 3.6 条件チャット ---
     const chatInput = document.getElementById('conditionChatInput');
     const chatApplyButton = document.getElementById('conditionChatApply');
     const chatMessages = document.getElementById('chatMessages');
@@ -297,7 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (handakutenCount) advanced.handakutenCount = handakutenCount;
 
         const smallKanaCount = parseNumberRule(text, [
-            { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
+            { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
+            { pattern: /[「\"]?[ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ][」\"]?などの小さい文字(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
         ]);
         if (smallKanaCount) advanced.smallKanaCount = smallKanaCount;
 
@@ -402,8 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
         parsed.excludeChars = toCharList(excludeValue);
 
         const patternValue = getMatch(text, [
-            /(?:パターン|形)(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z?？%％]+)/,
-            /([ァ-ンーぁ-んA-Za-z?？%％]*[?？%％][ァ-ンーぁ-んA-Za-z?？%％]*)/
+            /(?:パターン|形)(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z?？]+)/,
+            /([ァ-ンーぁ-んA-Za-z?？]*[?？][ァ-ンーぁ-んA-Za-z?？]*)/
         ]);
         if (patternValue) parsed.pattern = patternValue;
 
@@ -545,7 +543,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (parsed.pattern) setVal('chainPattern', parsed.pattern);
             if (parsed.includeChars?.length) setVal('chainRequiredChars', parsed.includeChars.join(','));
             if (parsed.excludeChars?.length) setVal('chainExcludeChars', parsed.excludeChars.join(','));
-            if (parsed.totalLength) setVal('chainTotalLength', parsed.totalLength);
             return;
         }
 
@@ -707,12 +704,12 @@ document.addEventListener('DOMContentLoaded', () => {
         clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
     }
 
-    // --- 検索実行メインロジック ---
+    // --- 4. 検索実行メインロジック ---
     searchButtons.forEach(button => {
         button.addEventListener('click', async () => {
             resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
             const mode = modeSelect.value;
-            const commonListName = listNameSelect.value;
+            const commonListName = listNameSelect.value; // 共通リスト名を取得
             
             let apiPath = '';
             let requestBody = {};
@@ -785,30 +782,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                 } else if (mode === 'chain') {
-                    apiPath = '/api/chain_shiritori';
-                    const patternVal = getVal('chainPattern').trim();
-                    const requiredStr = getVal('chainRequiredChars');
-                    const excludeStr = getVal('chainExcludeChars');
-                    const totalLengthVal = getVal('chainTotalLength');
+    apiPath = '/api/chain_shiritori';
 
-                    if (!patternVal) {
-                        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
-                        return;
-                    }
-                    
-                    requestBody = {
-                        listName: commonListName,
-                        pattern: patternVal,
-                        requiredChars: requiredStr ? requiredStr.split(',').map(c => c.trim()) : null,
-                        excludeChars: excludeStr ? excludeStr.split(',').map(c => c.trim()) : null,
-                        requiredCharMode: getChecked('chainRequiredCharExactly') ? 'exactly' : 'atLeast',
-                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-                        advancedConditions: getAdvancedConditionsForRequest()
-                    };
+    const patternVal = getVal('chainPattern').trim();
+    const requiredStr = getVal('chainRequiredChars');
+    const excludeStr = getVal('chainExcludeChars');
+    const totalLengthVal = getVal('chainTotalLength');
 
-                } else if (mode === 'autoGenerate') {
+    if (!patternVal) {
+        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
+        return;
+    }
+
+    requestBody = {
+        listName: commonListName,
+        pattern: patternVal,
+        requiredChars: requiredStr
+            ? requiredStr.split(',').map(c => c.trim()).filter(Boolean)
+            : null,
+        excludeChars: excludeStr
+            ? excludeStr.split(',').map(c => c.trim()).filter(Boolean)
+            : null,
+        requiredCharMode: getChecked('chainRequiredCharExactly') ? 'exactly' : 'atLeast',
+        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
+        advancedConditions: getAdvancedConditionsForRequest()
+    };
+} else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
                     
+                    // 条件の取得と構築
                     const getConditionMode = (conditionName) => {
                         const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
                         return select ? select.value : 'none';
@@ -881,7 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- 結果表示ロジック ---
+    // --- 5. 結果表示ロジック ---
     const getResultSummaryText = (data, count) => {
         if (!data.page || !data.perPage) {
             return `${count} 件の結果を表示します:`;

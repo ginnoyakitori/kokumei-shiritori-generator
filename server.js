@@ -1526,7 +1526,8 @@ function findChainShiritori(
   requiredChars,
   excludeChars,
   requiredCharMode,
-  listName
+  listName,
+  totalLength = null
 ) {
   const p = String(pattern || '').normalize('NFKC');
 
@@ -1534,11 +1535,33 @@ function findChainShiritori(
   const fixedLengthMode = !patternHasMultiWildcard(p);
   const fixedLength = p.length;
 
+  // 合計文字数が指定されている場合はそれを優先して探索上限にする。
+  // 未指定なら、%なしではパターン長、%ありでは上限なし。
+  const targetLength =
+    totalLength && Number(totalLength) > 0
+      ? Number(totalLength)
+      : null;
+
+  const maxLength =
+    targetLength ||
+    (fixedLengthMode ? fixedLength : null);
+
   const results = [];
 
   function backtrack(path, used, currentText, bindings) {
+    const currentLength = currentText.length;
+
+    // 合計文字数指定がある場合、それを超えたら打ち切り
+    if (targetLength && currentLength > targetLength) {
+      return;
+    }
+
+    // %なしの場合、固定長を超えたら打ち切り
+    if (!targetLength && fixedLengthMode && currentLength > fixedLength) {
+      return;
+    }
+
     // 現在の文字列が、パターンの途中まで一致しているか確認
-    // 数字の対応文字も bindings として引き継ぐ
     const prefixBindingCandidates = matchChainPatternPrefixWithBindings(
       p,
       currentText,
@@ -1549,7 +1572,7 @@ function findChainShiritori(
       return;
     }
 
-    // 現在の文字列がパターンに完全一致しているか確認
+    // 完全一致チェック
     for (const prefixBindings of prefixBindingCandidates) {
       const fullBindingCandidates = matchChainPatternFullWithBindings(
         p,
@@ -1558,22 +1581,30 @@ function findChainShiritori(
       );
 
       if (fullBindingCandidates.length > 0) {
-        if (
+        // 合計文字数指定がある場合は、ちょうど一致したものだけ採用
+        if (targetLength && currentLength !== targetLength) {
+          // まだ伸ばせる可能性があるので return はしない
+        } else if (
           checkRequiredChars(path, requiredChars, requiredCharMode) &&
           checkExcludeChars(path, excludeChars)
         ) {
           results.push([...path]);
-        }
 
-        // % がない固定長パターンなら、完全一致後に伸ばす必要はない
-        if (fixedLengthMode) {
-          return;
+          // % がなく固定長モードなら、完全一致後に伸ばす必要はない
+          if (fixedLengthMode && !targetLength) {
+            return;
+          }
+
+          // 合計文字数指定があり、ちょうど到達したならこれ以上伸ばさない
+          if (targetLength && currentLength === targetLength) {
+            return;
+          }
         }
       }
     }
 
-    // % がない場合、パターン長以上ならこれ以上伸ばさない
-    if (fixedLengthMode && currentText.length >= fixedLength) {
+    // 上限に到達しているならこれ以上伸ばさない
+    if (maxLength && currentLength >= maxLength) {
       return;
     }
 
@@ -1591,8 +1622,13 @@ function findChainShiritori(
 
       const nextText = currentText + next;
 
-      // % がない場合は固定長を超えたら不可
-      if (fixedLengthMode && nextText.length > fixedLength) {
+      // 合計文字数指定がある場合は、それを超えたら不可
+      if (targetLength && nextText.length > targetLength) {
+        continue;
+      }
+
+      // 合計文字数指定がない、かつ %なしならパターン長を超えたら不可
+      if (!targetLength && fixedLengthMode && nextText.length > fixedLength) {
         continue;
       }
 
@@ -1623,7 +1659,13 @@ function findChainShiritori(
       continue;
     }
 
-    if (fixedLengthMode && start.length > fixedLength) {
+    // 合計文字数指定がある場合、それを超える開始単語は除外
+    if (targetLength && start.length > targetLength) {
+      continue;
+    }
+
+    // 合計文字数指定がない、かつ %なしなら固定長を超える開始単語は除外
+    if (!targetLength && fixedLengthMode && start.length > fixedLength) {
       continue;
     }
 
@@ -1658,7 +1700,6 @@ function findChainShiritori(
     })
     .sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
-
 // ===== 入力正規化 =====
 function normalizeExcludeChars(value) {
   if (!value) return null;
@@ -2252,6 +2293,7 @@ app.post('/api/chain_shiritori', (req, res) => {
     requiredChars,
     excludeChars,
     requiredCharMode,
+    totalLength,
     advancedConditions
   } = req.body;
 
@@ -2271,29 +2313,30 @@ app.post('/api/chain_shiritori', (req, res) => {
   const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
   const cachePayload = {
-    listName,
-    pattern,
-    requiredChars,
-    excludeChars,
-    mode,
-    advancedConditions
-  };
+  listName,
+  pattern,
+  requiredChars,
+  excludeChars,
+  mode,
+  totalLength,
+  advancedConditions
+};
 
   return cachedJson(res, 'chain_shiritori', cachePayload, paging, () => {
     let results = findChainShiritori(
-      map,
-      pattern,
-      requiredChars,
-      excludeChars,
-      mode,
-      listName
-    );
-
+  map,
+  pattern,
+  requiredChars,
+  excludeChars,
+  mode,
+  listName,
+  totalLength ? parseInt(totalLength, 10) : null
+);
     results = finishResults(results, {
-      advancedConditions,
-      listName
-    });
-
+  totalLength,
+  advancedConditions,
+  listName
+});
     return { results };
   });
 });
