@@ -271,6 +271,17 @@
             </div>
 
             <div class="form-group">
+                <label>合計文字数</label>
+                <input type="number" id="chainTotalLength" placeholder="例: 15" min="1">
+            </div>
+
+            <div class="form-group">
+                <label>単語の文字数パターン</label>
+                <input type="text" id="chainWordLengthPattern" placeholder="例: 3,4,5（カンマ区切り）">
+                <small>各単語の文字数を指定します。例えば「3,4,5」なら最初の単語は3文字、次が4文字、最後が5文字となります。</small>
+            </div>
+
+            <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="chainRequiredCharExactly">
                     <label for="chainRequiredCharExactly">必須文字をちょうど指定回数使う</label>
