@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- 共通要素の取得 ---
     const modeSelect = document.getElementById('modeSelect');
-    const listNameSelect = document.getElementById('listName'); // 共通リスト
+    const listNameSelect = document.getElementById('listName');
     const resultsDiv = document.getElementById('results');
     const searchButtons = document.querySelectorAll('.search-btn');
     const resultPageInput = document.getElementById('resultPage');
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         substring: document.getElementById('substringMode')
     };
 
-    // ヘルパー関数: 要素が存在すれば値を、なければデフォルト値を返す
+    // ヘルパー関数
     const getVal = (id) => document.getElementById(id)?.value || '';
     const getChecked = (id) => document.getElementById(id)?.checked || false;
     const setVal = (id, value) => {
@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (button) button.click();
     };
 
-    // --- 1. ビュー切り替えロジック ---
+    // --- ビュー切り替えロジック ---
     const updateModeView = () => {
         const selectedMode = modeSelect.value;
         Object.keys(modeSections).forEach(mode => {
@@ -54,13 +54,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-    modeSelect.addEventListener('change', updateModeView);
+
+    // 初期表示
+    updateModeView();
+
+    // モード切り替えイベント（useCapture: trueで確実に実行）
     modeSelect.addEventListener('change', () => {
+        updateModeView();
         if (resultPageInput) resultPageInput.value = '1';
-    });
+    }, true);
+
+    // リスト選択変更時
     listNameSelect.addEventListener('change', () => {
         if (resultPageInput) resultPageInput.value = '1';
     });
+
+    // ページング
     if (prevPageBtn) {
         prevPageBtn.addEventListener('click', () => {
             const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
@@ -76,9 +85,8 @@ document.addEventListener('DOMContentLoaded', () => {
             runActiveSearch();
         });
     }
-    updateModeView();
 
-    // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
+    // --- 動的フィールド管理：？文字指定しりとり ---
     const wordPatternList = document.getElementById('wordPatternList');
     const addPatternBtn = document.getElementById('addPatternBtn');
 
@@ -99,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
         wordPatternList.addEventListener('click', (e) => {
             if (e.target.classList.contains('remove-pattern-btn')) {
                 e.target.closest('.pattern-item').remove();
-                // ラベル番号の振り直し
                 wordPatternList.querySelectorAll('.pattern-item').forEach((item, index) => {
                     const label = item.querySelector('.label');
                     if (label) label.textContent = `${index + 1}番目:`;
@@ -108,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 3. 動的フィールド管理：単語数指定しりとり (wordCountShiritori) ---
+    // --- 動的フィールド管理：単語数指定しりとり ---
     const wordCountInputsContainer = document.getElementById('wordCountInputs');
     const addWordCountInputButton = document.getElementById('addWordCountInput');
 
@@ -151,18 +158,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     if (wordCountTypeSelect) {
-        wordCountTypeSelect.addEventListener('change', () => {
-            updateWordCountNoneOption();
-        });
+        wordCountTypeSelect.addEventListener('change', updateWordCountNoneOption);
     }
     if (shiritoriTotalLengthInput) {
-        shiritoriTotalLengthInput.addEventListener('input', () => {
-            updateWordCountNoneOption();
-        });
+        shiritoriTotalLengthInput.addEventListener('input', updateWordCountNoneOption);
     }
     updateWordCountNoneOption();
 
-    // --- 3.5 自動生成モード：条件モード切り替え ---
+    // --- 自動生成モード：条件モード切り替え ---
     const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
 
     const updateAutoConditionRow = (select) => {
@@ -199,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
         select.addEventListener('change', (e) => updateAutoConditionRow(e.target));
     });
 
-    // --- 3.6 条件チャット ---
+    // --- 条件チャット ---
     const chatInput = document.getElementById('conditionChatInput');
     const chatApplyButton = document.getElementById('conditionChatApply');
     const chatMessages = document.getElementById('chatMessages');
@@ -294,8 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (handakutenCount) advanced.handakutenCount = handakutenCount;
 
         const smallKanaCount = parseNumberRule(text, [
-            { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
-            { pattern: /[「\"]?[ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ][」\"]?などの小さい文字(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s[...]
+            { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
         ]);
         if (smallKanaCount) advanced.smallKanaCount = smallKanaCount;
 
@@ -705,12 +707,12 @@ document.addEventListener('DOMContentLoaded', () => {
         clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
     }
 
-    // --- 4. 検索実行メインロジック ---
+    // --- 検索実行メインロジック ---
     searchButtons.forEach(button => {
         button.addEventListener('click', async () => {
             resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
             const mode = modeSelect.value;
-            const commonListName = listNameSelect.value; // 共通リスト名を取得
+            const commonListName = listNameSelect.value;
             
             let apiPath = '';
             let requestBody = {};
@@ -807,7 +809,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
                     
-                    // 条件の取得と構築
                     const getConditionMode = (conditionName) => {
                         const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
                         return select ? select.value : 'none';
@@ -880,7 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- 5. 結果表示ロジック ---
+    // --- 結果表示ロジック ---
     const getResultSummaryText = (data, count) => {
         if (!data.page || !data.perPage) {
             return `${count} 件の結果を表示します:`;
