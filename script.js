@@ -10,15 +10,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextPageBtn = document.getElementById('nextPageBtn');
 
     const modeSections = {
-        shiritori: document.getElementById('shiritoriMode'),
-        wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
-        wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
-        loop: document.getElementById('loopMode'),
-        chain: document.getElementById('chainMode'),
-        autoGenerate: document.getElementById('autoGenerateMode'),
-        wildcard: document.getElementById('wildcardMode'),
-        substring: document.getElementById('substringMode')
-    };
+shiritori: document.getElementById('shiritoriMode'),
+wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
+wildcardWords: document.getElementById('wildcardWordsMode'),
+wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
+loop: document.getElementById('loopMode'),
+chain: document.getElementById('chainMode'),
+autoGenerate: document.getElementById('autoGenerateMode'),
+wildcard: document.getElementById('wildcardMode'),
+substring: document.getElementById('substringMode')
+};
 
     // ヘルパー関数: 要素が存在すれば値を、なければデフォルト値を返す
     const getVal = (id) => document.getElementById(id)?.value || '';
@@ -81,6 +82,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
     const wordPatternList = document.getElementById('wordPatternList');
     const addPatternBtn = document.getElementById('addPatternBtn');
+
+    const wordPatternListWords =
+    document.getElementById('wordPatternListWords');
+
+const addPatternBtnWords =
+    document.getElementById('addPatternBtnWords');
+
+if (
+    addPatternBtnWords &&
+    wordPatternListWords
+) {
+    addPatternBtnWords.addEventListener(
+        'click',
+        () => {
+            const currentItems =
+                wordPatternListWords.querySelectorAll(
+                    '.pattern-item'
+                );
+
+            const div =
+                document.createElement('div');
+
+            div.className = 'pattern-item';
+
+            div.innerHTML = `
+                <span class="label">
+                    ${currentItems.length + 1}番目:
+                </span>
+                <input
+                    type="text"
+                    class="word-pattern-input-words"
+                    placeholder="例: ？？ン">
+            `;
+
+            wordPatternListWords.appendChild(div);
+        }
+    );
+}
 
     if (addPatternBtn && wordPatternList) {
         addPatternBtn.addEventListener('click', () => {
@@ -854,8 +893,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         uniqueWordLengths: getChecked('autoUniqueWordLengths'),
                         advancedConditions: getAdvancedConditionsForRequest()
                     };
+                    
+                    
 
-                } else if (mode === 'wildcard') {
+                }else if (mode === 'wildcardWords') {
+
+    apiPath = '/api/wildcard_words';
+
+    const patterns =
+        Array.from(
+            document.querySelectorAll(
+                '.word-pattern-input-words'
+            )
+        )
+        .map(input => input.value.trim())
+        .filter(Boolean);
+
+    requestBody = {
+        listName: commonListName,
+        wordPatterns: patterns
+    };
+}
+                
+                else if (mode === 'wildcard') {
                     apiPath = '/api/wildcard_search';
                     requestBody = { listName: commonListName, searchText: getVal('wildcardText').trim() };
 

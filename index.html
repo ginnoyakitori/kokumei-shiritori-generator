@@ -31,6 +31,9 @@
             <select id="modeSelect">
                 <option value="shiritori">文字指定しりとり</option>
                 <option value="wildcardShiritori">？文字指定しりとり（経路）</option>
+                <option value="wildcardWords">
+    ？文字指定単語列検索
+</option>
                 <option value="wordCountShiritori">単語数指定しりとり</option>
                 <option value="loop">ループ検索</option>
                 <option value="chain">チェーン検索</option>
@@ -215,6 +218,29 @@
             </div>
             <button class="search-btn primary">指定パターンで検索</button>
         </div>
+        <div id="wildcardWordsMode" class="mode-section">
+    <h2>？文字指定単語列検索</h2>
+
+    <p class="description">
+        しりとり接続を無視して、
+        指定パターンに一致する単語列を検索します。
+    </p>
+
+    <div id="wordPatternListWords">
+        <div class="pattern-item">
+            <span class="label">1番目:</span>
+            <input type="text" class="word-pattern-input-words" value="日本">
+        </div>
+    </div>
+
+    <button id="addPatternBtnWords" class="add-btn">
+        + 単語を追加
+    </button>
+
+    <button class="search-btn primary">
+        指定パターンで検索
+    </button>
+</div>
 
         <div id="wordCountShiritoriMode" class="mode-section">
             <h2>単語数指定しりとり</h2>

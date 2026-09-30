@@ -1211,7 +1211,8 @@ function findWildcardShiritoriCombinations(
   wordPatterns,
   requiredChars,
   requiredCharMode,
-  listName
+  listName,
+  requireShiritori = true
 ) {
   const allWords = getAllWords(listName);
 
@@ -1246,11 +1247,12 @@ function findWildcardShiritoriCombinations(
 
       // しりとり接続チェック
       if (
-        index > 0 &&
-        getLastChar(path[path.length - 1]) !== getFirstChar(word)
-      ) {
-        continue;
-      }
+requireShiritori &&
+index > 0 &&
+getLastChar(path[path.length - 1]) !== getFirstChar(word)
+) {
+continue;
+}
 
       // ここで、複数単語をまたいだ数字バインドをチェックする
       const nextBindingCandidates = matchPatternWithGlobalDigitBindings(
@@ -2244,6 +2246,58 @@ app.post('/api/wildcard_shiritori', (req, res) => {
   });
 });
 
+app.post('/api/wildcard_words', (req, res) => {
+
+    const paging =
+        normalizePaging(
+            req.body.page,
+            req.body.perPage
+        );
+
+    let {
+        listName,
+        wordPatterns,
+        requiredChars,
+        requiredCharMode
+    } = req.body;
+
+    const map = wordMap[listName];
+
+    if (!map) {
+        return res.status(400).json({
+            error: '無効な単語リストです。'
+        });
+    }
+
+    requiredChars =
+        normalizeRequiredChars(requiredChars);
+
+    const mode =
+        requiredCharMode === 'exactly'
+            ? 'exactly'
+            : 'atLeast';
+
+    return cachedJson(
+        res,
+        'wildcard_words',
+        req.body,
+        paging,
+        () => {
+
+            const results =
+                findWildcardShiritoriCombinations(
+                    map,
+                    wordPatterns,
+                    requiredChars,
+                    mode,
+                    listName,
+                    false
+                );
+
+            return { results };
+        }
+    );
+});
 // ===== API: ループしりとり =====
 app.post('/api/loop_shiritori', (req, res) => {
   const paging = normalizePaging(req.body.page, req.body.perPage);
