@@ -1861,6 +1861,7 @@ app.post('/api/shiritori', (req, res) => {
     uniqueWordLengths,
     uniquePairOnly,
     totalLength,
+    
     advancedConditions
   } = req.body;
 
@@ -2038,6 +2039,7 @@ app.post('/api/word_count_shiritori', (req, res) => {
     allowPermutation,
     uniqueWordLengths,
     totalLength,
+    uniquePairOnly,
     advancedConditions
   } = req.body;
 
@@ -2186,6 +2188,7 @@ app.post('/api/wildcard_shiritori', (req, res) => {
     requiredChars,
     requiredCharMode,
     totalLength,
+    uniquePairOnly,
     advancedConditions
   } = req.body;
 
@@ -2258,6 +2261,7 @@ app.post('/api/wildcard_words', (req, res) => {
         listName,
         wordPatterns,
         requiredChars,
+        uniquePairOnly,
         requiredCharMode
     } = req.body;
 
@@ -2348,6 +2352,7 @@ app.post('/api/chain_shiritori', (req, res) => {
     excludeChars,
     requiredCharMode,
     totalLength,
+    uniquePairOnly,
     advancedConditions
   } = req.body;
 
@@ -2416,7 +2421,8 @@ app.post('/api/auto_generate', (req, res) => {
     totalLengthMode,
     totalLength,
     uniqueWordLengths,
-    advancedConditions
+    advancedConditions,
+    uniquePairOnly
   } = req.body;
 
   const map = wordMap[listName];

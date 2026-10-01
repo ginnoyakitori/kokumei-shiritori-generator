@@ -772,7 +772,7 @@ if (
                         outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
                         requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
                         uniqueWordLengths: getChecked('uniqueWordLengths'),
-                        uniquePairOnly: getChecked('uniquePairOnly'),
+                        uniquePairOnly: getChecked('globalUniquePairOnly'),
                         totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
                         advancedConditions: getAdvancedConditionsForRequest()
                     };
@@ -786,13 +786,16 @@ if (
                     const totalLengthVal = getVal('wildcardTotalLength');
 
                     requestBody = {
-                        listName: commonListName,
-                        wordPatterns: patterns,
-                        requiredChars: null,
-                        requiredCharMode: 'atLeast',
-                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-                        advancedConditions: getAdvancedConditionsForRequest()
-                    };
+    listName: commonListName,
+    wordPatterns: patterns,
+    requiredChars: null,
+    requiredCharMode: 'atLeast',
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
 
                 } else if (mode === 'wordCountShiritori') {
                     apiPath = '/api/word_count_shiritori';
@@ -802,23 +805,28 @@ if (
                                           .map(val => val.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)));
                     const totalLengthVal = getVal('wordCountTotalLength');
                     requestBody = {
-                        listName: commonListName,
-                        wordCountPatterns: patterns,
-                        allowPermutation: getChecked('allowWordCountPermutation'),
-                        uniqueWordLengths: getChecked('uniqueWordLengthsWordCount'),
-                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-                        advancedConditions: getAdvancedConditionsForRequest()
-                    };
-
+    listName: commonListName,
+    wordCountPatterns: patterns,
+    allowPermutation: getChecked('allowWordCountPermutation'),
+    uniqueWordLengths: getChecked('uniqueWordLengthsWordCount'),
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
                     const totalLengthVal = getVal('loopTotalLength');
-                    requestBody = { 
-                        listName: commonListName, 
-                        pattern: getVal('loopPattern').trim(),
-                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-                        advancedConditions: getAdvancedConditionsForRequest()
-                    };
+                    requestBody = {
+    listName: commonListName,
+    pattern: getVal('loopPattern').trim(),
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
 
                 } else if (mode === 'chain') {
     apiPath = '/api/chain_shiritori';
@@ -834,18 +842,24 @@ if (
     }
 
     requestBody = {
-        listName: commonListName,
-        pattern: patternVal,
-        requiredChars: requiredStr
-            ? requiredStr.split(',').map(c => c.trim()).filter(Boolean)
-            : null,
-        excludeChars: excludeStr
-            ? excludeStr.split(',').map(c => c.trim()).filter(Boolean)
-            : null,
-        requiredCharMode: getChecked('chainRequiredCharExactly') ? 'exactly' : 'atLeast',
-        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-        advancedConditions: getAdvancedConditionsForRequest()
-    };
+    listName: commonListName,
+    pattern: patternVal,
+    requiredChars: requiredStr
+        ? requiredStr.split(',').map(c => c.trim()).filter(Boolean)
+        : null,
+    excludeChars: excludeStr
+        ? excludeStr.split(',').map(c => c.trim()).filter(Boolean)
+        : null,
+    requiredCharMode:
+        getChecked('chainRequiredCharExactly')
+            ? 'exactly'
+            : 'atLeast',
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
 } else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
                     
@@ -910,9 +924,10 @@ if (
         .filter(Boolean);
 
     requestBody = {
-        listName: commonListName,
-        wordPatterns: patterns
-    };
+    listName: commonListName,
+    wordPatterns: patterns,
+    uniquePairOnly: getChecked('globalUniquePairOnly')
+};
 }
                 
                 else if (mode === 'wildcard') {
