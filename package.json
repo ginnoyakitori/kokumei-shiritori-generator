@@ -1,10 +1,13 @@
 {
-  "name": "word-search-generator",
+  "name": "kokumei-shiritori-search",
   "version": "1.0.0",
-  "description": "Seek words generator app",
+  "description": "国名しりとり検索 Pro",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^4.19.2"
