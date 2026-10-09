@@ -1,2761 +1,1366 @@
-// =============================
-// 国名しりとり検索 Pro - 高速版 server.js
-// =============================
+// keshimasu-server/server.js
+require('dotenv').config();
+
 const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const { rateLimit } = require('express-rate-limit');
 const fs = require('fs');
 const path = require('path');
 
+const db = require('./db');
+const { runMigrations } = require('./init_db');
+
+const {
+    hashPasscode,
+    comparePasscode,
+    consumeDummyComparison,
+    generateSessionToken,
+    hashSessionToken
+} = require('./utils/auth');
+
 const app = express();
-const port = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '2mb' }));
-// 公開するのは public/ だけ（server.js や package.json を外部に見せない）
-app.use(express.static(path.join(__dirname, 'public')));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+// Renderのリバースプロキシを1段だけ信頼する
+// express-rate-limitが利用者ごとのIPアドレスを正しく認識するために必要
 
-// ===== ファイル設定 =====
-const KOKUMEI_KEY = 'kokumei.txt';
-const SHUTOMEI_KEY = 'shutomei.txt';
-const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
-const POKEMON_KEY = 'pokemon.txt';
-const COUNTRIES_ONLY_KEY = 'countries-only.txt';
-const CAPITALS_ONLY_KEY = 'capitals-only.txt';
-const COUNTRIES_ENGLISH_KEY = 'countries-english.txt';
-
-// ===== データ格納 =====
-const wordLists = {};
-const wordMap = {};
-const wordsByLength = {};
-const wordsByFirstChar = {};
-const wordsByFirstCharAndLength = {};
-const listIndexes = {};
-const firstCharCache = Object.create(null);
-const lastCharCache = Object.create(null);
-const regexCache = Object.create(null);
-const searchResultCache = new Map();
-const MAX_SEARCH_CACHE_ENTRIES = 200;
-
-// ===== 起動時しりとり事前生成キャッシュ =====
-// key: `${listName}:${wordCount}`
-// value: 経路配列 [[word1, word2, ...], ...]
-const startupShiritoriPathCache = new Map();
-
-const STARTUP_PRECOMPUTE_WORD_LIMITS = {
-  [POKEMON_KEY]: 2,
-  [KOKUMEI_SHUTOMEI_KEY]: 3,
-  [KOKUMEI_KEY]: 5,
-  [SHUTOMEI_KEY]: 5,
-  [COUNTRIES_ONLY_KEY]: 5,
-  [CAPITALS_ONLY_KEY]: 5,
-  [COUNTRIES_ENGLISH_KEY]: 3
-};
-
-function getStartupShiritoriCacheKey(listName, wordCount) {
-  return `${listName}:${wordCount}`;
-}
-
-function hasStartupPrecomputedShiritori(listName, wordCount) {
-  return startupShiritoriPathCache.has(
-    getStartupShiritoriCacheKey(listName, wordCount)
-  );
-}
-
-function getStartupPrecomputedShiritori(listName, wordCount) {
-  return startupShiritoriPathCache.get(
-    getStartupShiritoriCacheKey(listName, wordCount)
-  ) || null;
-}
-
-// ===== 文字種 =====
-const DAKUTEN_CHARS = new Set('ガギグゲゴザジズゼゾダヂヅデドバビブベボヴがぎぐげござじずぜぞだぢづでどばびぶべぼゔ');
-const HANDAKUTEN_CHARS = new Set('パピプペポぱぴぷぺぽ');
-const SMALL_KANA_CHARS = new Set('ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ');
-const collator = new Intl.Collator('ja', { sensitivity: 'base' });
-
-// ===== 基本文字処理 =====
-function normalizeWord(word) {
-  if (!word) return '';
-  return String(word).normalize('NFKC').charAt(0).toUpperCase();
-}
-
-function getShiritoriLastChar(word) {
-  const normalized = String(word || '').normalize('NFKC');
-  if (!normalized) return '';
-
-  let c = normalized.slice(-1);
-
-  if (c === 'ー' && normalized.length > 1) {
-    c = normalized.slice(-2, -1);
-  }
-
-  if (c === 'ン' || c === 'ん') return 'ン';
-
-  switch (c) {
-    case 'ゃ':
-    case 'ャ':
-      return 'ヤ';
-    case 'ゅ':
-    case 'ュ':
-      return 'ユ';
-    case 'ょ':
-    case 'ョ':
-      return 'ヨ';
-    case 'っ':
-    case 'ッ':
-      return 'ツ';
-    case 'ぁ':
-    case 'ァ':
-      return 'ア';
-    case 'ぃ':
-    case 'ィ':
-      return 'イ';
-    case 'ぅ':
-    case 'ゥ':
-      return 'ウ';
-    case 'ぇ':
-    case 'ェ':
-      return 'エ';
-    case 'ぉ':
-    case 'ォ':
-      return 'オ';
-    default:
-      return c.toUpperCase();
-  }
-}
-
-function getFirstChar(word) {
-  if (!firstCharCache[word]) {
-    firstCharCache[word] = normalizeWord(word);
-  }
-  return firstCharCache[word];
-}
-
-function getLastChar(word) {
-  if (!lastCharCache[word]) {
-    lastCharCache[word] = getShiritoriLastChar(word);
-  }
-  return lastCharCache[word];
-}
-
-function hasRepeatedChar(word) {
-  const seen = new Set();
-  for (const c of String(word || '').normalize('NFKC')) {
-    if (seen.has(c)) return true;
-    seen.add(c);
-  }
-  return false;
-}
-
-// ===== インデックス構築 =====
-function buildListIndexes(listName) {
-  const words = wordLists[listName] || [];
-
-  const byLength = Object.create(null);
-  const byFirstChar = Object.create(null);
-  const byFirstCharAndLength = Object.create(null);
-  const wordsByLastChar = Object.create(null);
-  const normalizedWords = Object.create(null);
-  const lastCharsByWord = Object.create(null);
-  const wordsWithRepeatedChars = new Set();
-  const firstChars = new Set();
-  const lastChars = new Set();
-
-  for (const word of words) {
-    const first = getFirstChar(word);
-    const last = getLastChar(word);
-    const len = word.length;
-
-    normalizedWords[word] = first;
-    lastCharsByWord[word] = last;
-    firstChars.add(first);
-    lastChars.add(last);
-
-    if (!byLength[len]) byLength[len] = [];
-    byLength[len].push(word);
-
-    if (!byFirstChar[first]) byFirstChar[first] = [];
-    byFirstChar[first].push(word);
-
-    if (!byFirstCharAndLength[first]) {
-      byFirstCharAndLength[first] = Object.create(null);
+// API全体に適用する通常のレート制限
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message:
+            'リクエストが多すぎます。しばらく待ってから再試行してください。'
     }
-    if (!byFirstCharAndLength[first][len]) {
-      byFirstCharAndLength[first][len] = [];
+});
+
+const registerLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message:
+            '新規登録の試行回数が多すぎます。時間を空けて再試行してください。'
     }
-    byFirstCharAndLength[first][len].push(word);
+});
 
-    if (!wordsByLastChar[last]) wordsByLastChar[last] = [];
-    wordsByLastChar[last].push(word);
-
-    if (hasRepeatedChar(word)) {
-      wordsWithRepeatedChars.add(word);
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: {
+        message:
+            'ログインの試行回数が多すぎます。15分ほど待ってから再試行してください。'
     }
-  }
+});
 
-  const noPrecedingWords = new Set(
-    words.filter(word => {
-      const prev = wordsByLastChar[normalizedWords[word]] || [];
-      return !prev.some(prevWord => prevWord !== word);
-    })
-  );
-
-  const sortedLengths = Object.keys(byLength).map(Number).sort((a, b) => a - b);
-
-  listIndexes[listName] = {
-    allWords: words,
-    byLength,
-    byFirstChar,
-    byFirstCharAndLength,
-    wordsByLastChar,
-    normalizedWords,
-    lastCharsByWord,
-    wordsWithRepeatedChars,
-    noPrecedingWords,
-    firstChars: [...firstChars],
-    lastChars: [...lastChars],
-    sortedLengths,
-    minWordLength: sortedLengths[0] || 1,
-    maxWordLength: sortedLengths[sortedLengths.length - 1] || 1
-  };
-
-  wordsByLength[listName] = byLength;
-  wordsByFirstChar[listName] = byFirstChar;
-  wordsByFirstCharAndLength[listName] = byFirstCharAndLength;
-  wordMap[listName] = byFirstChar;
-}
-
-// ===== データロード =====
-// 単語ファイルは data/ を優先し、無ければプロジェクト直下を探す
-function resolveDataPath(fileName) {
-  const inData = path.join(__dirname, 'data', fileName);
-  return fs.existsSync(inData) ? inData : path.join(__dirname, fileName);
-}
-
-// 英語リスト用: 判定には正規化した文字列（大文字・英字のみ）を使い、
-// 表示だけ元の名前に戻す。 listName -> { 'UNITEDSTATES': 'United States' }
-const displayNames = {};
-
-function normalizeLatinWord(raw) {
-  return String(raw)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // アクセント除去 (Côte -> Cote)
-    .replace(/[^A-Za-z]/g, '')        // スペース・ハイフン・アポストロフィ除去
-    .toUpperCase();
-}
-
-function loadWordFile(fileName, { latin = false } = {}) {
-  try {
-    const lines = fs.readFileSync(resolveDataPath(fileName), 'utf8')
-      .replace(/^\uFEFF/, '') // BOM除去
-      .split(/\r?\n/)
-      .map(w => w.trim())
-      .filter(Boolean);
-
-    if (!latin) {
-      return [...new Set(lines)].sort(collator.compare);
+const createPuzzleLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message:
+            '問題の投稿回数が多すぎます。時間を空けて再試行してください。'
     }
+});
 
-    const names = Object.create(null);
-    for (const raw of lines) {
-      const key = normalizeLatinWord(raw);
-      if (key && !names[key]) names[key] = raw;
+const scoreUpdateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: {
+        message:
+            'スコア更新のリクエストが多すぎます。少し待ってから再試行してください。'
     }
-    displayNames[fileName] = names;
-    return Object.keys(names).sort(collator.compare);
-  } catch (e) {
-    console.warn(`Warning: Could not load ${fileName}: ${e.message}`);
-    return [];
-  }
-}
+});
 
-// レスポンスの単語を表示用の名前に戻す（英語リストのみ）
-function toDisplay(listName, response) {
-  const names = displayNames[listName];
-  if (!names || !response || !Array.isArray(response.results)) return response;
-  return {
-    ...response,
-    results: response.results.map(r =>
-      Array.isArray(r) ? r.map(w => names[w] || w) : (names[r] || r)
-    )
-  };
-}
+const PORT = process.env.PORT || 3000;
 
-function loadWordData() {
-  wordLists[KOKUMEI_KEY] = loadWordFile(KOKUMEI_KEY);
-  wordLists[SHUTOMEI_KEY] = loadWordFile(SHUTOMEI_KEY);
-  wordLists[POKEMON_KEY] = loadWordFile(POKEMON_KEY);
-  wordLists[COUNTRIES_ONLY_KEY] = loadWordFile(COUNTRIES_ONLY_KEY);
-  wordLists[CAPITALS_ONLY_KEY] = loadWordFile(CAPITALS_ONLY_KEY);
-  wordLists[COUNTRIES_ENGLISH_KEY] = loadWordFile(COUNTRIES_ENGLISH_KEY, { latin: true });
+const SESSION_COOKIE_NAME = 'keshimasu_session';
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-  wordLists[KOKUMEI_SHUTOMEI_KEY] = [
-    ...new Set([
-      ...(wordLists[KOKUMEI_KEY] || []),
-      ...(wordLists[SHUTOMEI_KEY] || [])
-    ])
-  ].sort(collator.compare);
+const NICKNAME_MIN_LENGTH = 1;
+const NICKNAME_MAX_LENGTH = 20;
 
-  for (const listName of Object.keys(wordLists)) {
-    buildListIndexes(listName);
-  }
-}
+const PASSCODE_MIN_LENGTH = 8;
+const PASSCODE_MAX_LENGTH = 72;
 
-function getAllWords(listName) {
-  return listIndexes[listName]?.allWords || [];
-}
+const BOARD_ROWS = 8;
+const BOARD_COLUMNS = 5;
 
-// ===== パターン正規化（全角→半角・大文字化・空白除去） =====
-function normalizePattern(pattern) {
-  return String(pattern || '').normalize('NFKC').toUpperCase().replace(/\s+/g, '');
-}
 
-// ===== 正規表現 =====
+// ------------------------------
+// 辞書データ
+// ------------------------------
+const COUNTRY_WORDS = require('./data/country_words.json');
+const CAPITAL_WORDS = require('./data/capital_words.json');
+const POKEMON_WORDS = require('./data/pokemon_words.json');
 
- function patternToRegex(pattern) {
-  if (!pattern || !String(pattern).trim()) return null;
+// ------------------------------
+// ミドルウェア
+// ------------------------------
+const allowedOrigins = new Set([
+    'http://localhost:3000',
+    'https://kokumei-keshimasu.onrender.com'
+]);
 
-  const normalized = normalizePattern(pattern);
-
-  let regexString = '';
-
-  // 数字ごとに「初回はキャプチャ」「2回目以降は同じ文字への参照」にする
-  // 例: ?1?1? => ^.(.).\1.$
-  const digitGroupMap = Object.create(null);
-  let groupIndex = 1;
-
-  for (const char of normalized) {
-    // ? または ？ は「任意の1文字」
-    if (char === '?' || char === '？') {
-      regexString += '.';
-      continue;
-    }
-
-    // % または ％ は「0文字以上の任意の文字列」
-    if (char === '%' || char === '％') {
-      regexString += '.*';
-      continue;
-    }
-
-    // 0〜9 は「同じ数字なら同じ文字」
-    if (/^[0-9]$/.test(char)) {
-      if (!digitGroupMap[char]) {
-        digitGroupMap[char] = groupIndex;
-        regexString += '(.)';
-        groupIndex++;
-      } else {
-        regexString += `\\${digitGroupMap[char]}`;
-      }
-      continue;
-    }
-
-    // 正規表現の特殊文字はエスケープ
-    regexString += char.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
-  }
-
-  return new RegExp(`^${regexString}$`);
-}
-
-function getCachedRegex(pattern) {
-  const key = normalizePattern(pattern);
-  if (!key.trim()) return null;
-
-  if (!regexCache[key]) {
-    regexCache[key] = patternToRegex(key);
-  }
-
-  return regexCache[key];
-}
-
-function hasMultiWildcard(pattern) {
-  return /[%％]/.test(normalizePattern(pattern));
-}
-
-function isDigitPatternChar(char) {
-  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
-}
-
-function getWildcardPatternCandidatePool(listName, pattern, allWords) {
-  const normalizedPattern = normalizePattern(pattern);
-
-  if (!normalizedPattern.trim()) {
-    return allWords;
-  }
-
-  // % がある場合は文字数が固定できないため全単語を見る
-  if (hasMultiWildcard(normalizedPattern)) {
-    return allWords;
-  }
-
-  // ? や数字は1文字扱いなので、% がなければ文字数で絞り込める
-  return wordsByLength[listName]?.[normalizedPattern.length] || [];
-}
-
-/**
- * pattern と word が一致するかを、数字バインドを引き継ぎながら判定する。
- *
- * 例:
- * pattern: ?1?1?
- * word: エリトリア
- * bindings: {}
- * => [{ "1": "リ" }]
- *
- * 複数単語をまたぐ場合:
- * 既に bindings["1"] = "リ" なら、次の単語内の 1 も必ず "リ" になる。
- */
-function matchPatternWithGlobalDigitBindings(pattern, word, bindings = {}) {
-  const normalizedPattern = normalizePattern(pattern);
-
-  // 空パターンは「任意の単語」として扱う
-  if (!normalizedPattern.trim()) {
-    return [{ ...bindings }];
-  }
-
-  const patternChars = [...normalizedPattern];
-  const wordChars = [...String(word || '').normalize('NFKC')];
-
-  const results = [];
-
-  function backtrack(patternIndex, wordIndex, currentBindings) {
-    if (patternIndex === patternChars.length) {
-      if (wordIndex === wordChars.length) {
-        results.push({ ...currentBindings });
-      }
-      return;
-    }
-
-    const token = patternChars[patternIndex];
-
-    // % / ％ は「0文字以上の任意の文字列」
-    if (token === '%' || token === '％') {
-      for (let nextWordIndex = wordIndex; nextWordIndex <= wordChars.length; nextWordIndex++) {
-        backtrack(patternIndex + 1, nextWordIndex, currentBindings);
-      }
-      return;
-    }
-
-    // ここから先は1文字消費が必要
-    if (wordIndex >= wordChars.length) {
-      return;
-    }
-
-    const currentChar = wordChars[wordIndex];
-
-    // ? / ？ は「任意の1文字」
-    if (token === '?' || token === '？') {
-      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
-      return;
-    }
-
-    // 数字は「同じ数字なら同じ文字」
-    if (isDigitPatternChar(token)) {
-      const digit = token.normalize('NFKC');
-      const alreadyBoundChar = currentBindings[digit];
-
-      if (alreadyBoundChar !== undefined) {
-        if (alreadyBoundChar === currentChar) {
-          backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
+app.use(cors({
+    origin(origin, callback) {
+        // 同一オリジン通信やcurlなど、Originなしの通信を許可
+        if (!origin || allowedOrigins.has(origin)) {
+            return callback(null, true);
         }
-      } else {
-        const nextBindings = {
-          ...currentBindings,
-          [digit]: currentChar
+
+        return callback(new Error('許可されていないオリジンです。'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
+app.use(express.json({
+    limit: '100kb',
+    strict: true
+}));
+
+app.use(express.urlencoded({
+    extended: false,
+    limit: '20kb'
+}));
+
+app.use(cookieParser());
+
+// ゲーム画面（index.html / script.js / style.css）は public/ から配信する。
+// public/ に置いたファイルはすべて公開されるため、
+// .env・data/・server.js などは絶対に入れないこと。
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+if (!fs.existsSync(path.join(PUBLIC_DIR, 'index.html'))) {
+    console.warn(
+        '⚠️ public/index.html が見つかりません。' +
+        ' index.html・script.js・style.css を public/ に置いてください。'
+    );
+}
+
+app.use(express.static(PUBLIC_DIR));
+
+// 必要なら静的ファイル配信
+
+
+// ------------------------------
+// モード共通ヘルパー
+// ------------------------------
+const VALID_MODES = ['country', 'capital', 'pokemon'];
+
+function isValidMode(mode) {
+    return VALID_MODES.includes(mode);
+}
+
+function getClearedColumn(mode) {
+    if (mode === 'country') return 'cleared_country_ids';
+    if (mode === 'capital') return 'cleared_capital_ids';
+    if (mode === 'pokemon') return 'cleared_pokemon_ids';
+    return null;
+}
+
+function getClearField(mode) {
+    if (mode === 'country') return 'country_clears';
+    if (mode === 'capital') return 'capital_clears';
+    if (mode === 'pokemon') return 'pokemon_clears';
+    return null;
+}
+
+
+const RESERVED_NICKNAMES = new Set(['ゲスト', 'guest']);
+
+// ------------------------------
+// 問題一覧（clear_count付き）の取得とキャッシュ
+// ------------------------------
+// プレイヤー全員のクリア済みIDを1回だけ集計して問題に結び付ける。
+// （以前は問題ごとに全プレイヤーのJSONBを展開していた）
+// 結果は短時間メモリに保存し、問題登録・スコア更新時に破棄する。
+const PUZZLE_LIST_CACHE_TTL_MS = 60 * 1000;
+const puzzleListCache = new Map();
+
+function invalidatePuzzleListCache(mode) {
+    if (mode) {
+        puzzleListCache.delete(mode);
+    } else {
+        puzzleListCache.clear();
+    }
+}
+
+async function fetchPuzzleList(mode) {
+    const cached = puzzleListCache.get(mode);
+
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.rows;
+    }
+
+    const clearedColumn = getClearedColumn(mode);
+
+    const result = await db.query(
+        `
+        WITH clear_counts AS (
+            SELECT
+                cleared_id.value::integer AS puzzle_id,
+                COUNT(DISTINCT pl.id)::integer AS clear_count
+            FROM players pl
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                    WHEN jsonb_typeof(pl.${clearedColumn}) = 'array'
+                        THEN pl.${clearedColumn}
+                    ELSE '[]'::jsonb
+                END
+            ) AS cleared_id(value)
+            WHERE cleared_id.value ~ '^[0-9]{1,9}$'
+            GROUP BY 1
+        )
+        SELECT
+            p.id,
+            p.mode,
+            p.data,
+            p.creator,
+            p.created_at,
+            COALESCE(c.clear_count, 0) AS clear_count
+        FROM puzzles p
+        LEFT JOIN clear_counts c
+            ON c.puzzle_id = p.id
+        WHERE p.mode = $1
+        ORDER BY p.id ASC;
+        `,
+        [mode]
+    );
+
+    puzzleListCache.set(mode, {
+        rows: result.rows,
+        expiresAt: Date.now() + PUZZLE_LIST_CACHE_TTL_MS
+    });
+
+    return result.rows;
+}
+
+function normalizeNickname(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim();
+}
+
+function validateNickname(nickname) {
+    if (!nickname) {
+        return 'ニックネームを入力してください。';
+    }
+
+    const length = [...nickname].length;
+
+    if (
+        length < NICKNAME_MIN_LENGTH ||
+        length > NICKNAME_MAX_LENGTH
+    ) {
+        return `ニックネームは${NICKNAME_MIN_LENGTH}文字以上${NICKNAME_MAX_LENGTH}文字以内で入力してください。`;
+    }
+
+    if (/[\u0000-\u001f\u007f]/u.test(nickname)) {
+        return 'ニックネームに使用できない文字が含まれています。';
+    }
+
+    // ゲスト表示と紛らわしい名前は登録できない
+    if (RESERVED_NICKNAMES.has(nickname.normalize('NFKC').toLowerCase())) {
+        return 'そのニックネームは使用できません。';
+    }
+
+    return null;
+}
+
+function validatePasscode(passcode) {
+    if (typeof passcode !== 'string') {
+        return 'パスコードを入力してください。';
+    }
+
+    if (
+        passcode.length < PASSCODE_MIN_LENGTH ||
+        passcode.length > PASSCODE_MAX_LENGTH
+    ) {
+        return `パスコードは${PASSCODE_MIN_LENGTH}文字以上${PASSCODE_MAX_LENGTH}文字以内で入力してください。`;
+    }
+
+    return null;
+}
+
+// 盤面に使える文字
+// ・全モード共通: カタカナ1文字（U+30A0〜U+30FF、ただし「・」を除く）と F（ワイルドカード）
+// ・ポケモンモードのみ: ♂ ♀ Z 2 ・
+// ※クライアントの isValidGameChar と同じ条件にしておくこと
+const POKEMON_ONLY_CHARACTERS = new Set(['♂', '♀', 'Z', '2', '・']);
+
+function isValidBoardCharacter(character, mode) {
+    if (character === 'F') {
+        return true;
+    }
+
+    if (POKEMON_ONLY_CHARACTERS.has(character)) {
+        return mode === 'pokemon';
+    }
+
+    return /^[\u30a0-\u30ff]$/u.test(character);
+}
+
+// 空マスの上に浮いた文字を下へ落とす（クライアントの dropBoardLetters と同じ処理）
+function dropBoardLetters(board) {
+    const rowCount = board.length;
+    const result = board.map(row => [...row]);
+
+    for (let column = 0; column < BOARD_COLUMNS; column++) {
+        const letters = [];
+
+        for (let row = rowCount - 1; row >= 0; row--) {
+            if (board[row][column] !== '') {
+                letters.push(board[row][column]);
+            }
+        }
+
+        for (let row = rowCount - 1; row >= 0; row--) {
+            result[row][column] = letters[rowCount - 1 - row] ?? '';
+        }
+    }
+
+    return result;
+}
+
+function normalizeBoardData(boardData, mode) {
+    if (!Array.isArray(boardData) || boardData.length !== BOARD_ROWS) {
+        return null;
+    }
+
+    const normalizedBoard = [];
+
+    for (const row of boardData) {
+        if (
+            !Array.isArray(row) ||
+            row.length !== BOARD_COLUMNS
+        ) {
+            return null;
+        }
+
+        const normalizedRow = [];
+
+        for (const cell of row) {
+            if (typeof cell !== 'string') {
+                return null;
+            }
+
+            // 全角英数・半角カタカナを正規化し、英字は大文字に揃える
+            const normalizedCell = cell
+                .normalize('NFKC')
+                .trim()
+                .toUpperCase();
+
+            // 空マスは許可する。入力されている場合は1文字で、かつモードで使える文字のみ
+            if (normalizedCell !== '') {
+                if ([...normalizedCell].length !== 1) {
+                    return null;
+                }
+
+                if (!isValidBoardCharacter(normalizedCell, mode)) {
+                    return null;
+                }
+            }
+
+            normalizedRow.push(normalizedCell);
+        }
+
+        normalizedBoard.push(normalizedRow);
+    }
+
+    // 少なくとも1マスは文字が入っている必要がある
+    const hasAnyCharacter = normalizedBoard
+        .flat()
+        .some(cell => cell !== '');
+
+    if (!hasAnyCharacter) {
+        return null;
+    }
+
+    // 浮いている文字は下に落とした状態で保存する
+    // （重複判定も落とした後の形で行われ、同じ問題の二重登録を防げる）
+    return dropBoardLetters(normalizedBoard);
+}
+
+function toPublicPlayer(player) {
+    return {
+        id: player.id,
+        nickname: player.nickname,
+        country_clears: Number(player.country_clears) || 0,
+        capital_clears: Number(player.capital_clears) || 0,
+        pokemon_clears: Number(player.pokemon_clears) || 0,
+        cleared_country_ids: player.cleared_country_ids || [],
+        cleared_capital_ids: player.cleared_capital_ids || [],
+        cleared_pokemon_ids: player.cleared_pokemon_ids || []
+    };
+}
+
+function setSessionCookie(res, token) {
+    res.cookie(SESSION_COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: SESSION_MAX_AGE_MS,
+        path: '/'
+    });
+}
+
+function clearSessionCookie(res) {
+    res.clearCookie(SESSION_COOKIE_NAME, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/'
+    });
+}
+
+
+// ------------------------------
+// 期限切れセッションの削除
+// テーブル作成は migrate.js 側で行う。ここでは掃除だけ行い、失敗しても起動を止めない。
+// ------------------------------
+const SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+async function deleteExpiredSessions() {
+    try {
+        await db.query(`
+            DELETE FROM player_sessions
+            WHERE expires_at <= NOW();
+        `);
+    } catch (error) {
+        console.error('期限切れセッションの削除に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+    }
+}
+
+// マイグレーション未実行の環境で気付けるように、テーブルの有無だけ確認する
+async function warnIfSchemaMissing() {
+    try {
+        const result = await db.query(`
+            SELECT
+                to_regclass('public.players') AS players,
+                to_regclass('public.puzzles') AS puzzles,
+                to_regclass('public.player_sessions') AS player_sessions;
+        `);
+
+        const missing = Object.entries(result.rows[0])
+            .filter(([, value]) => !value)
+            .map(([name]) => name);
+
+        if (missing.length > 0) {
+            console.warn(
+                '⚠️ テーブルが見つかりません: ' + missing.join(', ') +
+                ' / 先に "node migrate.js" を実行してください。'
+            );
+        }
+    } catch (error) {
+        console.error('テーブルの確認に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+    }
+}
+
+async function createSession(playerId, res) {
+    const token = generateSessionToken();
+    const tokenHash = hashSessionToken(token);
+
+    await db.query(
+        `
+        INSERT INTO player_sessions (
+            player_id,
+            token_hash,
+            expires_at
+        )
+        VALUES (
+            $1,
+            $2,
+            NOW() + INTERVAL '7 days'
+        );
+        `,
+        [playerId, tokenHash]
+    );
+
+    setSessionCookie(res, token);
+}
+
+async function getAuthenticatedPlayer(req) {
+    const token = req.cookies[SESSION_COOKIE_NAME];
+
+    if (!token || typeof token !== 'string') {
+        return null;
+    }
+
+    const tokenHash = hashSessionToken(token);
+
+    const result = await db.query(
+        `
+        SELECT
+            p.id,
+            p.nickname,
+            p.country_clears,
+            p.capital_clears,
+            p.pokemon_clears,
+            p.cleared_country_ids,
+            p.cleared_capital_ids,
+            p.cleared_pokemon_ids
+        FROM player_sessions s
+        INNER JOIN players p
+            ON p.id = s.player_id
+        WHERE
+            s.token_hash = $1
+            AND s.expires_at > NOW()
+        LIMIT 1;
+        `,
+        [tokenHash]
+    );
+
+    return result.rows[0] || null;
+}
+
+async function optionalAuth(req, res, next) {
+    try {
+        const player = await getAuthenticatedPlayer(req);
+
+        req.auth = player
+            ? {
+                playerId: player.id,
+                nickname: player.nickname,
+                player
+            }
+            : null;
+
+        next();
+    } catch (error) {
+        console.error('任意認証処理に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+
+        next();
+    }
+}
+
+async function requireAuth(req, res, next) {
+    try {
+        const player = await getAuthenticatedPlayer(req);
+
+        if (!player) {
+            clearSessionCookie(res);
+
+            return res.status(401).json({
+                message: 'ログインが必要です。'
+            });
+        }
+
+        req.auth = {
+            playerId: player.id,
+            nickname: player.nickname,
+            player
         };
 
-        backtrack(patternIndex + 1, wordIndex + 1, nextBindings);
-      }
+        return next();
+    } catch (error) {
+        console.error('認証処理に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
 
-      return;
+        return res.status(500).json({
+            message: '認証処理中にエラーが発生しました。'
+        });
     }
-
-    // 通常文字は完全一致
-    if (token === currentChar) {
-      backtrack(patternIndex + 1, wordIndex + 1, currentBindings);
-    }
-  }
-
-  backtrack(0, 0, { ...bindings });
-
-  return results;
-}
-// ===== キャッシュ =====
-function getSearchCacheKey(name, payload) {
-  return `${name}:${JSON.stringify(payload)}`;
 }
 
-function getSearchCache(name, payload) {
-  return searchResultCache.get(getSearchCacheKey(name, payload));
-}
-
-function setSearchCache(name, payload, value) {
-  const key = getSearchCacheKey(name, payload);
-
-  if (searchResultCache.has(key)) {
-    searchResultCache.delete(key);
-  } else if (searchResultCache.size >= MAX_SEARCH_CACHE_ENTRIES) {
-    searchResultCache.delete(searchResultCache.keys().next().value);
-  }
-
-  searchResultCache.set(key, value);
-}
-
-// ===== ページング =====
-function normalizePaging(pageValue, perPageValue) {
-  return {
-    page: Math.max(1, parseInt(pageValue, 10) || 1),
-    perPage: Math.min(500, Math.max(1, parseInt(perPageValue, 10) || 100))
-  };
-}
-
-function paginateSearchResponse(response, paging) {
-  if (!response || !Array.isArray(response.results)) {
-    return response;
-  }
-
-  const totalCount = response.results.length;
-  const perPage = paging.perPage;
-  const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
-  const page = Math.min(Math.max(1, paging.page), totalPages);
-  const start = (page - 1) * perPage;
-
-  return {
-    ...response,
-    results: response.results.slice(start, start + perPage),
-    page,
-    perPage,
-    totalCount,
-    totalPages
-  };
-}
-
-function cachedJson(res, name, payload, paging, producer) {
-  const cached = getSearchCache(name, payload);
-  if (cached) {
-    return res.json(toDisplay(payload.listName, paginateSearchResponse(cached, paging)));
-  }
-
-  const response = producer();
-  setSearchCache(name, payload, response);
-
-  return res.json(toDisplay(payload.listName, paginateSearchResponse(response, paging)));
-}// ===== 条件判定 =====
-function checkRequiredChars(path, requiredChars, requiredCharMode = 'atLeast') {
-  if (!requiredChars || requiredChars.length === 0) return true;
-
-  const text = path.join('');
-  const counts = Object.create(null);
-
-  for (const c of requiredChars.filter(Boolean)) {
-    counts[c] = (counts[c] || 0) + 1;
-  }
-
-  for (const c of Object.keys(counts)) {
-    let actual = 0;
-    let pos = -1;
-
-    while ((pos = text.indexOf(c, pos + 1)) !== -1) {
-      actual++;
-    }
-
-    if (requiredCharMode === 'exactly') {
-      if (actual !== counts[c]) return false;
-    } else {
-      if (actual < counts[c]) return false;
-    }
-  }
-
-  return true;
-}
-
-function checkExcludeChars(path, excludeChars) {
-  if (!excludeChars || excludeChars.length === 0) return true;
-
-  const text = path.join('');
-  return excludeChars.every(c => !text.includes(c));
-}
-
-function containsAnyExcludedChar(word, excludeChars) {
-  return Boolean(
-    excludeChars &&
-    excludeChars.length &&
-    excludeChars.some(c => word.includes(c))
-  );
-}
-
-function filterUniqueWordLengths(results) {
-  return results.filter(path => {
-    const lengths = path.map(w => w.length);
-    return new Set(lengths).size === lengths.length;
-  });
-}
-
-function filterUniquePairOnly(results) {
-  const counts = Object.create(null);
-
-  for (const path of results) {
-    const key = `${getFirstChar(path[0])}→${getLastChar(path[path.length - 1])}`;
-    counts[key] = (counts[key] || 0) + 1;
-  }
-
-  return results.filter(path => {
-    const key = `${getFirstChar(path[0])}→${getLastChar(path[path.length - 1])}`;
-    return counts[key] === 1;
-  });
-}
-
-function filterByTotalLength(results, totalLength) {
-  if (!totalLength) return results;
-
-  return results.filter(path => {
-    const sum = path.reduce((total, word) => total + word.length, 0);
-    return sum === Number(totalLength);
-  });
-}
-
-function matchesNumberRule(actual, rule) {
-  if (rule === undefined || rule === null || rule === '') return true;
-  if (typeof rule === 'number') return actual === rule;
-  if (typeof rule !== 'object') return true;
-
-  const value = Number(rule.value);
-  if (Number.isNaN(value)) return true;
-
-  if (rule.mode === 'min') return actual >= value;
-  if (rule.mode === 'max') return actual <= value;
-
-  return actual === value;
-}
-
-function matchesLengthPattern(path, pattern) {
-  if (!pattern) return true;
-
-  const lengths = path.map(w => w.length);
-  if (lengths.length <= 1) return true;
-
-  if (pattern === 'increasing') {
-    return lengths.every((v, i) => i === 0 || v > lengths[i - 1]);
-  }
-
-  if (pattern === 'nondecreasing') {
-    return lengths.every((v, i) => i === 0 || v >= lengths[i - 1]);
-  }
-
-  if (pattern === 'decreasing') {
-    return lengths.every((v, i) => i === 0 || v < lengths[i - 1]);
-  }
-
-  if (pattern === 'nonincreasing') {
-    return lengths.every((v, i) => i === 0 || v <= lengths[i - 1]);
-  }
-
-  if (pattern === 'arithmetic') {
-    if (lengths.length <= 2) return true;
-    const diff = lengths[1] - lengths[0];
-    return lengths.every((v, i) => i < 2 || v - lengths[i - 1] === diff);
-  }
-
-  if (pattern === 'geometric') {
-    if (lengths.length <= 2) return true;
-    if (lengths[0] === 0) return false;
-
-    const ratio = lengths[1] / lengths[0];
-    return lengths.every((v, i) => {
-      if (i < 2) return true;
-      return Math.abs(lengths[i - 1] * ratio - v) < 1e-9;
+// ------------------------------
+// APIの案内（ゲーム画面は public/index.html が / で配信される）
+// ------------------------------
+app.get('/api', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Keshimasu API',
+        endpoints: [
+            'GET /api/health',
+            'GET /api/puzzles/:mode',
+            'GET /api/words/:mode',
+            'GET /api/rankings/:type',
+            'POST /api/player/register',
+            'POST /api/player/login',
+            'POST /api/player/logout',
+            'GET /api/player/me',
+            'POST /api/puzzles',
+            'POST /api/score/update'
+        ]
     });
-  }
-
-  return true;
-}
-
-function hasPrecedingWord(path, listName) {
-  if (!path.length) return false;
-
-  const first = getFirstChar(path[0]);
-  return (listIndexes[listName]?.wordsByLastChar?.[first] || [])
-    .some(w => w !== path[0]);
-}
-
-function hasSucceedingWord(path, listName) {
-  if (!path.length) return false;
-
-  const last = path[path.length - 1];
-  const lastChar = getLastChar(last);
-  const used = new Set(path);
-
-  return (wordsByFirstChar[listName]?.[lastChar] || [])
-    .some(w => w !== last && !used.has(w));
-}
-
-function filterByAdvancedConditions(results, advanced, listName) {
-  if (!advanced || Object.keys(advanced).length === 0) {
-    return results;
-  }
-
-  const repeatedWords = listIndexes[listName]?.wordsWithRepeatedChars;
-
-  return results.filter(path => {
-    const text = path.join('');
-
-    if (
-      advanced.dakutenCount !== undefined &&
-      !matchesNumberRule(
-        [...text].filter(c => DAKUTEN_CHARS.has(c)).length,
-        advanced.dakutenCount
-      )
-    ) {
-      return false;
-    }
-
-    if (
-      advanced.handakutenCount !== undefined &&
-      !matchesNumberRule(
-        [...text].filter(c => HANDAKUTEN_CHARS.has(c)).length,
-        advanced.handakutenCount
-      )
-    ) {
-      return false;
-    }
-
-    if (
-      advanced.smallKanaCount !== undefined &&
-      !matchesNumberRule(
-        [...text].filter(c => SMALL_KANA_CHARS.has(c)).length,
-        advanced.smallKanaCount
-      )
-    ) {
-      return false;
-    }
-
-    if (advanced.repeatedCharWordCount !== undefined) {
-      const count = path.reduce((total, word) => {
-        if (repeatedWords) {
-          return total + (repeatedWords.has(word) ? 1 : 0);
-        }
-        return total + (hasRepeatedChar(word) ? 1 : 0);
-      }, 0);
-
-      if (!matchesNumberRule(count, advanced.repeatedCharWordCount)) {
-        return false;
-      }
-    }
-
-    if (
-      advanced.hasPrecedingWord !== undefined &&
-      hasPrecedingWord(path, listName) !== advanced.hasPrecedingWord
-    ) {
-      return false;
-    }
-
-    if (
-      advanced.hasSucceedingWord !== undefined &&
-      hasSucceedingWord(path, listName) !== advanced.hasSucceedingWord
-    ) {
-      return false;
-    }
-
-    if (!matchesLengthPattern(path, advanced.lengthPattern)) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function finishResults(results, {
-  uniqueWordLengths,
-  uniquePairOnly,
-  totalLength,
-  advancedConditions,
-  listName
-} = {}) {
-  let out = results;
-
-  // 1. まず「単語の文字数がすべて異なる経路のみ表示」
-  if (uniqueWordLengths) {
-    out = filterUniqueWordLengths(out);
-  }
-
-  // 2. 次に合計文字数フィルター
-  if (totalLength) {
-    out = filterByTotalLength(out, Number(totalLength));
-  }
-
-  // 3. 次に高度条件フィルター
-  out = filterByAdvancedConditions(out, advancedConditions, listName);
-
-  // 4. 最後に、残った経路だけを対象に
-  //    「最初と最後の文字の組み合わせが唯一の経路のみ表示」
-  if (uniquePairOnly) {
-    out = filterUniquePairOnly(out);
-  }
-
-  return out;
-}
-
-// ===== 優先度付きキュー =====
-class PriorityQueue {
-  constructor(compare = (a, b) => a[0] < b[0]) {
-    this.heap = [];
-    this.compare = compare;
-  }
-
-  size() {
-    return this.heap.length;
-  }
-
-  push(value) {
-    this.heap.push(value);
-    this.up(this.heap.length - 1);
-  }
-
-  pop() {
-    if (!this.heap.length) return undefined;
-
-    const top = this.heap[0];
-    const last = this.heap.pop();
-
-    if (this.heap.length) {
-      this.heap[0] = last;
-      this.down(0);
-    }
-
-    return top;
-  }
-
-  up(index) {
-    while (index > 0) {
-      const parent = Math.floor((index - 1) / 2);
-
-      if (!this.compare(this.heap[index], this.heap[parent])) {
-        break;
-      }
-
-      [this.heap[index], this.heap[parent]] =
-        [this.heap[parent], this.heap[index]];
-
-      index = parent;
-    }
-  }
-
-  down(index) {
-    while (true) {
-      let smallest = index;
-      const left = index * 2 + 1;
-      const right = left + 1;
-
-      if (
-        left < this.heap.length &&
-        this.compare(this.heap[left], this.heap[smallest])
-      ) {
-        smallest = left;
-      }
-
-      if (
-        right < this.heap.length &&
-        this.compare(this.heap[right], this.heap[smallest])
-      ) {
-        smallest = right;
-      }
-
-      if (smallest === index) break;
-
-      [this.heap[index], this.heap[smallest]] =
-        [this.heap[smallest], this.heap[index]];
-
-      index = smallest;
-    }
-  }
-}
-
-// ===== 最短しりとり =====
-function findShiritoriShortestPath(
-  map,
-  firstChar,
-  lastChar,
-  requiredChars,
-  excludeChars,
-  noPrecedingWord,
-  noSucceedingWord,
-  requiredCharMode,
-  listName,
-  advancedConditions
-) {
-  const allWords = getAllWords(listName);
-
-  // 開始文字が未指定なら全単語から開始する
-  let starts = firstChar ? (map[firstChar] || []) : allWords;
-
-  // 「前に続けられる単語なし」条件
-  if (noPrecedingWord) {
-    starts = starts.filter(word =>
-      listIndexes[listName]?.noPrecedingWords?.has(word)
-    );
-  }
-
-  // 除外文字を含む開始単語は最初から除外
-  starts = starts.filter(word => !containsAnyExcludedChar(word, excludeChars));
-
-  const pq = new PriorityQueue();
-  const results = [];
-  const seenStates = new Set();
-
-  let shortestLength = Infinity;
-
-  // 初期状態を投入
-  for (const word of starts) {
-    pq.push([
-      word.length,
-      word,
-      [word]
-    ]);
-  }
-
-  while (pq.size()) {
-    const [currentLength, currentWord, path] = pq.pop();
-
-    // すでに高度条件まで満たした最短経路より長いものは不要
-    if (currentLength > shortestLength) {
-      continue;
-    }
-
-    const pathKey = path.join(',');
-
-    if (seenStates.has(pathKey)) {
-      continue;
-    }
-
-    seenStates.add(pathKey);
-
-    const used = new Set(path);
-    const endChar = getLastChar(currentWord);
-
-    // 終了文字が未指定なら、どの文字で終わっても候補になる
-    const matchesLastChar =
-      lastChar == null ||
-      lastChar === '' ||
-      endChar === lastChar;
-
-    if (matchesLastChar) {
-      let okNoSucceeding = true;
-
-      if (noSucceedingWord) {
-        const nextWords = wordsByFirstChar[listName]?.[endChar] || [];
-
-        okNoSucceeding = !nextWords.some(word =>
-          word !== currentWord && !used.has(word)
-        );
-      }
-
-      const okBasicConditions =
-        okNoSucceeding &&
-        checkRequiredChars(path, requiredChars, requiredCharMode) &&
-        checkExcludeChars(path, excludeChars);
-
-      // ここで高度条件も判定する
-      const okAdvancedConditions =
-        !advancedConditions ||
-        Object.keys(advancedConditions).length === 0 ||
-        filterByAdvancedConditions([path], advancedConditions, listName).length === 1;
-
-      if (okBasicConditions && okAdvancedConditions) {
-        if (currentLength < shortestLength) {
-          shortestLength = currentLength;
-          results.length = 0;
-          results.push([...path]);
-        } else if (currentLength === shortestLength) {
-          results.push([...path]);
-        }
-
-        // この経路からさらに伸ばすと必ず長くなるので不要
-        continue;
-      }
-    }
-
-    const nextWords = wordsByFirstChar[listName]?.[endChar] || [];
-
-    for (const nextWord of nextWords) {
-      if (used.has(nextWord)) {
-        continue;
-      }
-
-      if (containsAnyExcludedChar(nextWord, excludeChars)) {
-        continue;
-      }
-
-      const nextLength = currentLength + nextWord.length;
-
-      if (nextLength > shortestLength) {
-        continue;
-      }
-
-      pq.push([
-        nextLength,
-        nextWord,
-        [...path, nextWord]
-      ]);
-    }
-  }
-
-  return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-// ===== 固定単語数しりとり =====
-function findShiritoriCombinations(
-  map,
-  firstChar,
-  lastChar,
-  wordCount,
-  requiredChars,
-  excludeChars,
-  noPrecedingWord,
-  noSucceedingWord,
-  requiredCharMode,
-  listName,
-  options = {}
-) {
-  const allWords = getAllWords(listName);
-  const index = listIndexes[listName];
-
-  const targetTotalLength = options.totalLength
-    ? Number(options.totalLength)
-    : null;
-
-  const uniqueLen = Boolean(options.uniqueWordLengths);
-  const results = [];
-
-  if (wordCount == null || wordCount === '') {
-    if (!targetTotalLength) return [];
-
-    const maxCount = Math.floor(targetTotalLength / index.minWordLength);
-    const merged = [];
-
-    for (let n = 1; n <= maxCount; n++) {
-      merged.push(
-        ...findShiritoriCombinations(
-          map,
-          firstChar,
-          lastChar,
-          n,
-          requiredChars,
-          excludeChars,
-          noPrecedingWord,
-          noSucceedingWord,
-          requiredCharMode,
-          listName,
-          options
-        )
-      );
-    }
-
-    const seen = new Set();
-
-    return merged.filter(path => {
-      const key = path.join(',');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+});
+
+// ------------------------------
+// ヘルスチェック
+// ------------------------------
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Keshimasu API is running.'
     });
-  }
+});
 
-  wordCount = parseInt(wordCount, 10);
 
-  if (!Number.isFinite(wordCount) || wordCount < 1) {
-    return [];
-  }
+app.use('/api', apiLimiter);
+// ------------------------------
+// ワード一覧取得
+// GET /api/words/country
+// GET /api/words/capital
+// GET /api/words/pokemon
+// ------------------------------
+const WORD_LISTS = {
+    country: COUNTRY_WORDS,
+    capital: CAPITAL_WORDS,
+    pokemon: POKEMON_WORDS
+};
 
-  const canReachLength = (sum, depth) => {
-    if (!targetTotalLength) return true;
+app.get('/api/words/:mode', (req, res) => {
+    const { mode } = req.params;
 
-    const rest = wordCount - depth;
-
-    return (
-      sum + rest * index.minWordLength <= targetTotalLength &&
-      sum + rest * index.maxWordLength >= targetTotalLength
-    );
-  };
-
-  function backtrack(path, used, sum, usedLengths) {
-    if (!canReachLength(sum, path.length)) {
-      return;
+    if (!Object.prototype.hasOwnProperty.call(WORD_LISTS, mode)) {
+        return res.status(400).json({
+            message: '無効なモードです。'
+        });
     }
 
-    if (path.length === wordCount) {
-      if (targetTotalLength && sum !== targetTotalLength) {
-        return;
-      }
+    // 辞書はデプロイしない限り変わらないので、ブラウザに1時間キャッシュさせる
+    res.set('Cache-Control', 'public, max-age=3600');
 
-      const endChar = getLastChar(path[path.length - 1]);
+    return res.json(WORD_LISTS[mode]);
+});
 
-      if (lastChar != null && endChar !== lastChar) {
-        return;
-      }
+// ------------------------------
+// プレイヤー新規登録
+// POST /api/player/register
+// ----------
+app.post(
+    '/api/player/register',
+    registerLimiter,
+    async (req, res) => {
+        const nickname = normalizeNickname(req.body.nickname);
+        const passcode = req.body.passcode;
 
-      if (
-        noSucceedingWord &&
-        (wordsByFirstChar[listName]?.[endChar] || []).some(w => !used.has(w))
-      ) {
-        return;
-      }
+        const nicknameError = validateNickname(nickname);
 
-      if (
-        checkRequiredChars(path, requiredChars, requiredCharMode) &&
-        checkExcludeChars(path, excludeChars)
-      ) {
-        results.push([...path]);
-      }
-
-      return;
-    }
-
-    const nextKey = getLastChar(path[path.length - 1]);
-    const nextWords = wordsByFirstChar[listName]?.[nextKey] || [];
-
-    for (const next of nextWords) {
-      if (used.has(next)) continue;
-      if (containsAnyExcludedChar(next, excludeChars)) continue;
-
-      const len = next.length;
-
-      if (uniqueLen && usedLengths.has(len)) continue;
-      if (targetTotalLength && sum + len > targetTotalLength) continue;
-
-      used.add(next);
-      path.push(next);
-
-      if (uniqueLen) {
-        usedLengths.add(len);
-      }
-
-      backtrack(path, used, sum + len, usedLengths);
-
-      if (uniqueLen) {
-        usedLengths.delete(len);
-      }
-
-      path.pop();
-      used.delete(next);
-    }
-  }
-
-  let starts = firstChar ? (map[firstChar] || []) : allWords;
-
-  if (noPrecedingWord) {
-    starts = starts.filter(w => index.noPrecedingWords.has(w));
-  }
-
-  for (const word of starts) {
-    if (containsAnyExcludedChar(word, excludeChars)) continue;
-
-    const len = word.length;
-
-    if (targetTotalLength && len > targetTotalLength) continue;
-
-    backtrack(
-      [word],
-      new Set([word]),
-      len,
-      uniqueLen ? new Set([len]) : new Set()
-    );
-  }
-
-  return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-// ===== 単語数パターン検索 =====
-function getPermutations(arr) {
-  if (arr.length === 0) return [[]];
-
-  const out = [];
-
-  for (let i = 0; i < arr.length; i++) {
-    const current = arr[i];
-    const rest = arr.slice(0, i).concat(arr.slice(i + 1));
-
-    for (const restPerm of getPermutations(rest)) {
-      for (const n of current) {
-        out.push([n, ...restPerm]);
-      }
-    }
-  }
-
-  const seen = new Set();
-
-  return out.filter(item => {
-    const key = item.join(',');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function generateCartesianProduct(arr) {
-  return arr
-    .reduce(
-      (a, b) => a.flatMap(x => b.map(y => x.concat(y))),
-      [[]]
-    )
-    .filter(a => a.length);
-}
-
-function findShiritoriByWordCountPatterns(
-  map,
-  wordCountPatterns,
-  requiredChars,
-  allowPermutation,
-  requiredCharMode,
-  listName
-) {
-  const sequences = allowPermutation
-    ? getPermutations(wordCountPatterns)
-    : generateCartesianProduct(wordCountPatterns);
-
-  const results = [];
-
-  for (const sequence of sequences) {
-    function backtrack(path, used, index) {
-      if (index === sequence.length) {
-        if (checkRequiredChars(path, requiredChars, requiredCharMode)) {
-          results.push([...path]);
+        if (nicknameError) {
+            return res.status(400).json({
+                message: nicknameError
+            });
         }
-        return;
-      }
 
-      const length = sequence[index];
+        const passcodeError = validatePasscode(passcode);
 
-      const pool =
-        path.length === 0
-          ? (wordsByLength[listName]?.[length] || [])
-          : (
-              wordsByFirstCharAndLength[listName]
-                ?.[getLastChar(path[path.length - 1])]
-                ?.[length] || []
+        if (passcodeError) {
+            return res.status(400).json({
+                message: passcodeError
+            });
+        }
+
+        try {
+            const existingResult = await db.query(
+                `
+                SELECT id
+                FROM players
+                WHERE LOWER(nickname) = LOWER($1)
+                LIMIT 1;
+                `,
+                [nickname]
             );
 
-      for (const word of pool) {
-        if (used.has(word)) continue;
+            if (existingResult.rows.length > 0) {
+                return res.status(409).json({
+                    message:
+                        'そのニックネームはすでに使用されています。'
+                });
+            }
 
-        used.add(word);
-        path.push(word);
+            const passcodeHash = await hashPasscode(passcode);
 
-        backtrack(path, used, index + 1);
+            const insertResult = await db.query(
+                `
+                INSERT INTO players (
+                    nickname,
+                    passcode_hash,
+                    country_clears,
+                    capital_clears,
+                    pokemon_clears,
+                    cleared_country_ids,
+                    cleared_capital_ids,
+                    cleared_pokemon_ids
+                )
+                VALUES (
+                    $1,
+                    $2,
+                    0,
+                    0,
+                    0,
+                    '[]'::jsonb,
+                    '[]'::jsonb,
+                    '[]'::jsonb
+                )
+                RETURNING
+                    id,
+                    nickname,
+                    country_clears,
+                    capital_clears,
+                    pokemon_clears,
+                    cleared_country_ids,
+                    cleared_capital_ids,
+                    cleared_pokemon_ids;
+                `,
+                [nickname, passcodeHash]
+            );
 
-        path.pop();
-        used.delete(word);
-      }
-    }
+            const player = insertResult.rows[0];
 
-    backtrack([], new Set(), 0);
-  }
+            await createSession(player.id, res);
 
-  const seen = new Set();
+            return res.status(201).json({
+                message: '新規登録しました。',
+                player: toPublicPlayer(player)
+            });
+        } catch (error) {
+            console.error('プレイヤー登録に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
 
-  return results
-    .filter(path => {
-      const key = path.join(',');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
+            if (error.code === '23505') {
+                return res.status(409).json({
+                    message:
+                        'そのニックネームはすでに使用されています。'
+                });
+            }
 
-// ===== ワイルドカードしりとり =====
-function findWildcardShiritoriCombinations(
-  map,
-  wordPatterns,
-  requiredChars,
-  requiredCharMode,
-  listName,
-  requireShiritori = true
-) {
-  const allWords = getAllWords(listName);
-
-  const candidates = wordPatterns.map(pattern => {
-    const pool = getWildcardPatternCandidatePool(listName, pattern, allWords);
-
-    // 事前に「単語単体として絶対に一致しないもの」は除外する。
-    // ただし数字の最終的な対応文字は経路全体で決まるので、
-    // 探索中にも再チェックする。
-    return pool.filter(word => {
-      return matchPatternWithGlobalDigitBindings(pattern, word, {}).length > 0;
-    });
-  });
-
-  const results = [];
-
-  function backtrack(index, path, used, bindings) {
-    if (index === candidates.length) {
-      if (checkRequiredChars(path, requiredChars, requiredCharMode)) {
-        results.push([...path]);
-      }
-      return;
-    }
-
-    const pattern = wordPatterns[index];
-    const words = candidates[index];
-
-    for (const word of words) {
-      if (used.has(word)) {
-        continue;
-      }
-
-      // しりとり接続チェック
-      if (
-requireShiritori &&
-index > 0 &&
-getLastChar(path[path.length - 1]) !== getFirstChar(word)
-) {
-continue;
-}
-
-      // ここで、複数単語をまたいだ数字バインドをチェックする
-      const nextBindingCandidates = matchPatternWithGlobalDigitBindings(
-        pattern,
-        word,
-        bindings
-      );
-
-      if (nextBindingCandidates.length === 0) {
-        continue;
-      }
-
-      used.add(word);
-      path.push(word);
-
-      for (const nextBindings of nextBindingCandidates) {
-        backtrack(index + 1, path, used, nextBindings);
-      }
-
-      path.pop();
-      used.delete(word);
-    }
-  }
-
-  backtrack(0, [], new Set(), {});
-
-  const seen = new Set();
-
-  return results
-    .filter(path => {
-      const key = path.join(',');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-// ===== ループ検索 =====
-function findLoopShiritori(map, pattern, listName) {
-  const p = normalizePattern(pattern);
-  const L = p.length;
-  const regex = getCachedRegex(p);
-  const results = [];
-  const candidates = getAllWords(listName).filter(word => word.length < L);
-
-  function backtrack(path, used, currentText) {
-    if (currentText.length === L) {
-      if (getLastChar(path[path.length - 1]) !== getFirstChar(path[0])) {
-        return;
-      }
-
-      for (let i = 0; i < L; i++) {
-        const rotated = currentText.slice(i) + currentText.slice(0, i);
-
-        if (regex.test(rotated)) {
-          results.push([...path]);
-          break;
+            return res.status(500).json({
+                message:
+                    'プレイヤー登録中にエラーが発生しました。'
+            });
         }
-      }
-
-      return;
     }
+);
 
-    if (currentText.length > L) return;
+// ------------------------------
+// プレイヤーログイン
+// POST /api/player/login
+// ------------------------------
 
-    const last = getLastChar(path[path.length - 1]);
-    const nextWords = wordsByFirstChar[listName]?.[last] || [];
+app.post(
+    '/api/player/login',
+    loginLimiter,
+    async (req, res) => {
+        const nickname = normalizeNickname(req.body.nickname);
+        const passcode = req.body.passcode;
 
-    for (const next of nextWords) {
-      if (used.has(next)) continue;
-      if (currentText.length + next.length > L) continue;
-
-      used.add(next);
-      path.push(next);
-
-      backtrack(path, used, currentText + next);
-
-      path.pop();
-      used.delete(next);
-    }
-  }
-
-  for (const start of candidates) {
-    backtrack([start], new Set([start]), start);
-  }
-
-  const seen = new Set();
-
-  return results
-    .filter(path => {
-      const key = [...path].sort().join(',');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-function isDigitPatternChar(char) {
-  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
-}
-
-function patternHasMultiWildcard(pattern) {
-  return /[%％]/.test(normalizePattern(pattern));
-}
-
-/**
- * チェーン検索用:
- * pattern に対して text が「途中まで一致しているか」を判定する。
- *
- * 数字はチェーン全体で共有される。
- * 例:
- * pattern: ?1?1?
- * text: エリト
- * bindings: {}
- * => 1 = リ として prefix OK
- */
-function matchChainPatternPrefixWithBindings(pattern, text, bindings = {}) {
-  const patternChars = [...normalizePattern(pattern)];
-  const textChars = [...String(text || '').normalize('NFKC')];
-
-  const results = [];
-
-  function backtrack(patternIndex, textIndex, currentBindings) {
-    // text を全部読めたら「ここまでは一致」とみなす
-    if (textIndex === textChars.length) {
-      results.push({ ...currentBindings });
-      return;
-    }
-
-    // pattern が先に尽きたら不一致
-    if (patternIndex === patternChars.length) {
-      return;
-    }
-
-    const token = patternChars[patternIndex];
-    const currentChar = textChars[textIndex];
-
-    // % / ％ は 0文字以上の任意文字列
-    if (token === '%' || token === '％') {
-      // 0文字消費
-      backtrack(patternIndex + 1, textIndex, currentBindings);
-
-      // 1文字以上消費
-      for (let nextTextIndex = textIndex + 1; nextTextIndex <= textChars.length; nextTextIndex++) {
-        backtrack(patternIndex + 1, nextTextIndex, currentBindings);
-      }
-
-      return;
-    }
-
-    // ? / ？ は任意の1文字
-    if (token === '?' || token === '？') {
-      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
-      return;
-    }
-
-    // 数字は、同じ数字なら同じ文字
-    if (isDigitPatternChar(token)) {
-      const digit = token.normalize('NFKC');
-      const boundChar = currentBindings[digit];
-
-      if (boundChar !== undefined) {
-        if (boundChar === currentChar) {
-          backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+        if (!nickname || typeof passcode !== 'string') {
+            return res.status(400).json({
+                message:
+                    'ニックネームとパスコードを入力してください。'
+            });
         }
-      } else {
-        backtrack(
-          patternIndex + 1,
-          textIndex + 1,
-          {
-            ...currentBindings,
-            [digit]: currentChar
-          }
-        );
-      }
 
-      return;
-    }
+        try {
+            const result = await db.query(
+                `
+                SELECT
+                    id,
+                    nickname,
+                    passcode_hash,
+                    country_clears,
+                    capital_clears,
+                    pokemon_clears,
+                    cleared_country_ids,
+                    cleared_capital_ids,
+                    cleared_pokemon_ids
+                FROM players
+                WHERE LOWER(nickname) = LOWER($1)
+                LIMIT 1;
+                `,
+                [nickname]
+            );
 
-    // 通常文字は完全一致
-    if (token === currentChar) {
-      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
-    }
-  }
+            // ニックネームの存在有無を外部から判別しにくくする
+            if (result.rows.length === 0) {
+                // 存在するアカウントと同じ程度の処理時間にそろえる
+                await consumeDummyComparison(passcode);
 
-  backtrack(0, 0, { ...bindings });
+                return res.status(401).json({
+                    message:
+                        'ニックネームまたはパスコードが違います。'
+                });
+            }
 
-  return results;
-}
+            const player = result.rows[0];
 
-/**
- * チェーン検索用:
- * pattern と text が最後まで完全一致するかを判定する。
- *
- * 数字はチェーン全体で共有される。
- */
-function matchChainPatternFullWithBindings(pattern, text, bindings = {}) {
-  const patternChars = [...normalizePattern(pattern)];
-  const textChars = [...String(text || '').normalize('NFKC')];
+            const isMatch = await comparePasscode(
+                passcode,
+                player.passcode_hash
+            );
 
-  const results = [];
+            if (!isMatch) {
+                return res.status(401).json({
+                    message:
+                        'ニックネームまたはパスコードが違います。'
+                });
+            }
 
-  function backtrack(patternIndex, textIndex, currentBindings) {
-    if (patternIndex === patternChars.length) {
-      if (textIndex === textChars.length) {
-        results.push({ ...currentBindings });
-      }
-      return;
-    }
+            await createSession(player.id, res);
 
-    const token = patternChars[patternIndex];
+            return res.status(200).json({
+                message: 'ログインしました。',
+                player: toPublicPlayer(player)
+            });
+        } catch (error) {
+            console.error('ログイン処理に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
 
-    // % / ％ は 0文字以上の任意文字列
-    if (token === '%' || token === '％') {
-      for (let nextTextIndex = textIndex; nextTextIndex <= textChars.length; nextTextIndex++) {
-        backtrack(patternIndex + 1, nextTextIndex, currentBindings);
-      }
-      return;
-    }
-
-    if (textIndex >= textChars.length) {
-      return;
-    }
-
-    const currentChar = textChars[textIndex];
-
-    // ? / ？ は任意の1文字
-    if (token === '?' || token === '？') {
-      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
-      return;
-    }
-
-    // 数字は、同じ数字なら同じ文字
-    if (isDigitPatternChar(token)) {
-      const digit = token.normalize('NFKC');
-      const boundChar = currentBindings[digit];
-
-      if (boundChar !== undefined) {
-        if (boundChar === currentChar) {
-          backtrack(patternIndex + 1, textIndex + 1, currentBindings);
+            return res.status(500).json({
+                message:
+                    'ログイン処理中にエラーが発生しました。'
+            });
         }
-      } else {
-        backtrack(
-          patternIndex + 1,
-          textIndex + 1,
-          {
-            ...currentBindings,
-            [digit]: currentChar
-          }
-        );
-      }
-
-      return;
     }
+);
 
-    // 通常文字は完全一致
-    if (token === currentChar) {
-      backtrack(patternIndex + 1, textIndex + 1, currentBindings);
-    }
-  }
+app.post(
+    '/api/player/logout',
+    async (req, res) => {
+        const token = req.cookies[SESSION_COOKIE_NAME];
 
-  backtrack(0, 0, { ...bindings });
+        try {
+            if (token && typeof token === 'string') {
+                await db.query(
+                    `
+                    DELETE FROM player_sessions
+                    WHERE token_hash = $1;
+                    `,
+                    [hashSessionToken(token)]
+                );
+            }
 
-  return results;
-}
+            clearSessionCookie(res);
 
-// ===== チェーン検索 =====
-function findChainShiritori(
-  map,
-  pattern,
-  requiredChars,
-  excludeChars,
-  requiredCharMode,
-  listName,
-  totalLength = null
-) {
-  const p = normalizePattern(pattern);
+            return res.status(200).json({
+                message: 'ログアウトしました。'
+            });
+        } catch (error) {
+            console.error('ログアウト処理に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
 
-  // % が含まれていない場合は、パターン全体の文字数が固定される
-  const fixedLengthMode = !patternHasMultiWildcard(p);
-  const fixedLength = p.length;
+            clearSessionCookie(res);
 
-  // 合計文字数が指定されている場合はそれを優先して探索上限にする。
-  // 未指定なら、%なしではパターン長、%ありでは上限なし。
-  const targetLength =
-    totalLength && Number(totalLength) > 0
-      ? Number(totalLength)
-      : null;
-
-  const maxLength =
-    targetLength ||
-    (fixedLengthMode ? fixedLength : null);
-
-  const results = [];
-
-  function backtrack(path, used, currentText, bindings) {
-    const currentLength = currentText.length;
-
-    // 合計文字数指定がある場合、それを超えたら打ち切り
-    if (targetLength && currentLength > targetLength) {
-      return;
-    }
-
-    // %なしの場合、固定長を超えたら打ち切り
-    if (!targetLength && fixedLengthMode && currentLength > fixedLength) {
-      return;
-    }
-
-    // 現在の文字列が、パターンの途中まで一致しているか確認
-    const prefixBindingCandidates = matchChainPatternPrefixWithBindings(
-      p,
-      currentText,
-      bindings
-    );
-
-    if (prefixBindingCandidates.length === 0) {
-      return;
-    }
-
-    // 完全一致チェック
-    for (const prefixBindings of prefixBindingCandidates) {
-      const fullBindingCandidates = matchChainPatternFullWithBindings(
-        p,
-        currentText,
-        prefixBindings
-      );
-
-      if (fullBindingCandidates.length > 0) {
-        // 合計文字数指定がある場合は、ちょうど一致したものだけ採用
-        if (targetLength && currentLength !== targetLength) {
-          // まだ伸ばせる可能性があるので return はしない
-        } else if (
-          checkRequiredChars(path, requiredChars, requiredCharMode) &&
-          checkExcludeChars(path, excludeChars)
-        ) {
-          results.push([...path]);
-
-          // % がなく固定長モードなら、完全一致後に伸ばす必要はない
-          if (fixedLengthMode && !targetLength) {
-            return;
-          }
-
-          // 合計文字数指定があり、ちょうど到達したならこれ以上伸ばさない
-          if (targetLength && currentLength === targetLength) {
-            return;
-          }
+            return res.status(500).json({
+                message: 'ログアウト処理中にエラーが発生しました。'
+            });
         }
-      }
     }
-
-    // 上限に到達しているならこれ以上伸ばさない
-    if (maxLength && currentLength >= maxLength) {
-      return;
+);
+// ------------------------------
+// プレイヤー情報取得
+// GET /api/player/me
+// ------------------------------
+app.get(
+    '/api/player/me',
+    requireAuth,
+    async (req, res) => {
+        return res.status(200).json({
+            player: toPublicPlayer(req.auth.player)
+        });
     }
-
-    const last = getLastChar(path[path.length - 1]);
-    const nextWords = wordsByFirstChar[listName]?.[last] || [];
-
-    for (const next of nextWords) {
-      if (used.has(next)) {
-        continue;
-      }
-
-      if (containsAnyExcludedChar(next, excludeChars)) {
-        continue;
-      }
-
-      const nextText = currentText + next;
-
-      // 合計文字数指定がある場合は、それを超えたら不可
-      if (targetLength && nextText.length > targetLength) {
-        continue;
-      }
-
-      // 合計文字数指定がない、かつ %なしならパターン長を超えたら不可
-      if (!targetLength && fixedLengthMode && nextText.length > fixedLength) {
-        continue;
-      }
-
-      const nextBindingCandidates = matchChainPatternPrefixWithBindings(
-        p,
-        nextText,
-        bindings
-      );
-
-      if (nextBindingCandidates.length === 0) {
-        continue;
-      }
-
-      used.add(next);
-      path.push(next);
-
-      for (const nextBindings of nextBindingCandidates) {
-        backtrack(path, used, nextText, nextBindings);
-      }
-
-      path.pop();
-      used.delete(next);
-    }
-  }
-
-  for (const start of getAllWords(listName)) {
-    if (containsAnyExcludedChar(start, excludeChars)) {
-      continue;
-    }
-
-    // 合計文字数指定がある場合、それを超える開始単語は除外
-    if (targetLength && start.length > targetLength) {
-      continue;
-    }
-
-    // 合計文字数指定がない、かつ %なしなら固定長を超える開始単語は除外
-    if (!targetLength && fixedLengthMode && start.length > fixedLength) {
-      continue;
-    }
-
-    const bindingCandidates = matchChainPatternPrefixWithBindings(
-      p,
-      start,
-      {}
-    );
-
-    if (bindingCandidates.length === 0) {
-      continue;
-    }
-
-    for (const bindings of bindingCandidates) {
-      backtrack(
-        [start],
-        new Set([start]),
-        start,
-        bindings
-      );
-    }
-  }
-
-  const seen = new Set();
-
-  return results
-    .filter(path => {
-      const key = path.join(',');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-// ===== 入力正規化 =====
-function normalizeCharToken(c) {
-  return String(c).normalize('NFKC').toUpperCase();
-}
-
-function normalizeExcludeChars(value) {
-  if (!value) return null;
-
-  let list;
-  if (Array.isArray(value)) {
-    list = value;
-  } else {
-    // 「ワ,パ」「ワパ」どちらでも1文字ずつに分解する（カンマ自体は除外文字にしない）
-    list = String(value)
-      .split(/[,、\s]+/)
-      .flatMap(part => (part.length > 1 ? [...part] : [part]));
-  }
-
-  list = list.filter(Boolean).map(normalizeCharToken);
-  return list.length ? list : null;
-}
-
-function normalizeRequiredChars(value) {
-  if (!Array.isArray(value)) return null;
-  const list = value.filter(Boolean).map(normalizeCharToken);
-  return list.length ? list : null;
-}
-
-// ===== 起動前ロード =====
-console.log('Loading word data...');
-loadWordData();
-console.log('Word data loaded successfully!');
-
-// ===== 起動時しりとり事前生成 =====
-function generateAllShiritoriPathsByCount(listName, wordCount) {
-  const allWords = getAllWords(listName);
-  const results = [];
-
-  if (!wordCount || wordCount < 1) {
-    return results;
-  }
-
-  function backtrack(path, used) {
-    if (path.length === wordCount) {
-      results.push([...path]);
-      return;
-    }
-
-    const lastChar = getLastChar(path[path.length - 1]);
-    const nextWords = wordsByFirstChar[listName]?.[lastChar] || [];
-
-    for (const nextWord of nextWords) {
-      if (used.has(nextWord)) {
-        continue;
-      }
-
-      used.add(nextWord);
-      path.push(nextWord);
-
-      backtrack(path, used);
-
-      path.pop();
-      used.delete(nextWord);
-    }
-  }
-
-  for (const startWord of allWords) {
-    backtrack([startWord], new Set([startWord]));
-  }
-
-  return results.sort((a, b) => collator.compare(a.join(''), b.join('')));
-}
-
-function precomputeStartupShiritoriCache() {
-  console.log('Precomputing startup shiritori cache...');
-
-  const totalStarted = Date.now();
-
-  for (const [listName, maxWordCount] of Object.entries(STARTUP_PRECOMPUTE_WORD_LIMITS)) {
-    if (!wordLists[listName]) {
-      continue;
-    }
-
-    for (let wordCount = 1; wordCount <= maxWordCount; wordCount++) {
-      const started = Date.now();
-      const key = getStartupShiritoriCacheKey(listName, wordCount);
-
-      const results = generateAllShiritoriPathsByCount(listName, wordCount);
-      startupShiritoriPathCache.set(key, results);
-
-      console.log(
-        `Precomputed ${listName} / ${wordCount} words: ${results.length} paths in ${Date.now() - started}ms`
-      );
-    }
-  }
-
-  console.log(
-    `Startup shiritori cache ready in ${Date.now() - totalStarted}ms`
-  );
-}
-
-function filterStartupPrecomputedShiritoriPaths(
-  paths,
-  {
-    listName,
-    firstChar,
-    lastChar,
-    requiredChars,
-    excludeChars,
-    noPrecedingWord,
-    noSucceedingWord,
-    requiredCharMode
-  }
-) {
-  if (!paths || paths.length === 0) {
-    return [];
-  }
-
-  return paths.filter(path => {
-    if (firstChar && getFirstChar(path[0]) !== firstChar) {
-      return false;
-    }
-
-    if (lastChar && getLastChar(path[path.length - 1]) !== lastChar) {
-      return false;
-    }
-
-    if (
-      noPrecedingWord &&
-      !listIndexes[listName]?.noPrecedingWords?.has(path[0])
-    ) {
-      return false;
-    }
-
-    if (
-      noSucceedingWord &&
-      hasSucceedingWord(path, listName)
-    ) {
-      return false;
-    }
-
-    if (!checkRequiredChars(path, requiredChars, requiredCharMode)) {
-      return false;
-    }
-
-    if (!checkExcludeChars(path, excludeChars)) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-// ===== API: 文字指定しりとり =====
-app.post('/api/shiritori', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  let {
-    listName,
-    firstChar,
-    lastChar,
-    wordCount,
-    requiredChars,
-    excludeChars,
-    noPrecedingWord,
-    noSucceedingWord,
-    outputType,
-    requiredCharMode,
-    uniqueWordLengths,
-    uniquePairOnly,
-    totalLength,
-    
-    advancedConditions
-  } = req.body;
-
-  const words = wordLists[listName];
-  const map = wordMap[listName];
-
-  if (!map || !words) {
-    return res.status(400).json({ error: '無効な単語リストです。' });
-  }
-
-  firstChar = firstChar ? normalizeWord(firstChar) : null;
-  lastChar = lastChar ? normalizeWord(lastChar) : null;
-  requiredChars = normalizeRequiredChars(requiredChars);
-  excludeChars = normalizeExcludeChars(excludeChars);
-
-  const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
-
-  if (typeof wordCount === 'string' && wordCount !== 'shortest') {
-    wordCount = parseInt(wordCount, 10);
-  }
-
-  if (
-    typeof wordCount === 'number' &&
-    (Number.isNaN(wordCount) || wordCount < 1)
-  ) {
-    return res.status(400).json({
-      error: '単語数は1以上の数字である必要があります。'
-    });
-  }
-
-  const cachePayload = {
-    listName,
-    firstChar,
-    lastChar,
-    wordCount,
-    requiredChars,
-    excludeChars,
-    noPrecedingWord,
-    noSucceedingWord,
-    outputType,
-    mode,
-    uniqueWordLengths,
-    uniquePairOnly,
-    totalLength,
-    advancedConditions
-  };
-
-  return cachedJson(res, 'shiritori', cachePayload, paging, () => {
-    const started = Date.now();
-    let results;
-
-    if (wordCount === 'shortest') {
-      if (outputType !== 'path') {
-        return {
-          error: '件数カウントは最短モードでは現在サポートされていません。'
-        };
-      }
-
-      // 最短検索では、必須文字・除外文字・高度条件を
-      // 探索中に満たす経路だけを最短候補にする
-      results = findShiritoriShortestPath(
-        map,
-        firstChar,
-        lastChar,
-        requiredChars,
-        excludeChars,
-        noPrecedingWord,
-        noSucceedingWord,
-        mode,
-        listName,
-        advancedConditions
-      );
-
-      // 高度条件は findShiritoriShortestPath() の中で判定済み。
-      // ここでは、残った最短経路に対して
-      // 文字数一意・合計文字数・唯一ペアなどを後処理する。
-      //
-      // ※ uniquePairOnly は finishResults() の中で
-      //   最後に実行されるようにしておく。
-      results = finishResults(results, {
-        uniqueWordLengths,
-        uniquePairOnly,
-        totalLength,
-        advancedConditions: null,
-        listName
-      });
-    } else {
-      // 通常の固定単語数検索
-      // 起動時に事前生成済みの単語数なら、DFSせずキャッシュから絞り込む
-      if (
-        Number.isInteger(wordCount) &&
-        hasStartupPrecomputedShiritori(listName, wordCount)
-      ) {
-        const precomputedPaths = getStartupPrecomputedShiritori(
-          listName,
-          wordCount
-        );
-
-        results = filterStartupPrecomputedShiritoriPaths(
-          precomputedPaths,
-          {
-            listName,
-            firstChar,
-            lastChar,
-            requiredChars,
-            excludeChars,
-            noPrecedingWord,
-            noSucceedingWord,
-            requiredCharMode: mode
-          }
-        );
-      } else {
-        results = findShiritoriCombinations(
-          map,
-          firstChar,
-          lastChar,
-          wordCount,
-          requiredChars,
-          excludeChars,
-          noPrecedingWord,
-          noSucceedingWord,
-          mode,
-          listName,
-          { totalLength, uniqueWordLengths }
-        );
-      }
-
-      // 通常検索では、探索後に高度条件も含めて絞り込む
-      // uniquePairOnly は finishResults() の最後に実行される前提
-      results = finishResults(results, {
-        uniqueWordLengths,
-        uniquePairOnly,
-        totalLength,
-        advancedConditions,
-        listName
-      });
-    }
-
-    console.log(
-      `Shiritori completed in ${Date.now() - started}ms (${results.length} results)`
-    );
-
-    if (outputType === 'firstCharCount' || outputType === 'lastCharCount') {
-      const counts = Object.create(null);
-
-      for (const path of results) {
-        const char =
-          outputType === 'firstCharCount'
-            ? getFirstChar(path[0])
-            : getLastChar(path[path.length - 1]);
-
-        counts[char] = (counts[char] || 0) + 1;
-      }
-
-      const sorted = Object.fromEntries(
-        Object.entries(counts).sort(([a], [b]) => collator.compare(a, b))
-      );
-
-      return outputType === 'firstCharCount'
-        ? { firstCharCounts: sorted }
-        : { lastCharCounts: sorted };
-    }
-
-    return { results };
-  });
-});
-
-// ===== API: 単語数指定しりとり =====
-app.post('/api/word_count_shiritori', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  let {
-    listName,
-    wordCountPatterns,
-    allowPermutation,
-    uniqueWordLengths,
-    totalLength,
-    uniquePairOnly,
-    advancedConditions
-  } = req.body;
-
-  const map = wordMap[listName];
-
-  if (!map) {
-    return res.status(400).json({ error: '無効な単語リストです。' });
-  }
-
-  const cachePayload = {
-    uniquePairOnly,
-    listName,
-    wordCountPatterns,
-    allowPermutation,
-    uniqueWordLengths,
-    totalLength,
-    advancedConditions
-  };
-
-  return cachedJson(res, 'word_count_shiritori', cachePayload, paging, () => {
-    let results = [];
-
-    if (
-      !wordCountPatterns ||
-      !Array.isArray(wordCountPatterns) ||
-      wordCountPatterns.length === 0
-    ) {
-      if (!totalLength || totalLength < 1) {
-        return {
-          error: '単語数パターンまたは合計文字数を指定してください。'
-        };
-      }
-
-      results = findShiritoriCombinations(
-        map,
-        null,
-        null,
-        null,
-        null,
-        null,
-        false,
-        false,
-        'atLeast',
-        listName,
-        { totalLength, uniqueWordLengths }
-      );
-    } else {
-      const ok = wordCountPatterns.every(arr =>
-        Array.isArray(arr) &&
-        arr.length &&
-        arr.every(n => typeof n === 'number' && n > 0)
-      );
-
-      if (!ok) {
-        return {
-          error: '単語数の指定は1以上の数字である必要があります（例: [[2, 3], [4]]）。'
-        };
-      }
-
-      results = findShiritoriByWordCountPatterns(
-        map,
-        wordCountPatterns,
-        null,
-        allowPermutation,
-        'atLeast',
-        listName
-      );
-    }
-
-    results = finishResults(results, {
-      uniquePairOnly,
-      uniqueWordLengths,
-      totalLength,
-      advancedConditions,
-      listName
-    });
-
-    return { results };
-  });
-});
-
-// ===== API: ワイルドカード単語検索 =====
-app.post('/api/wildcard_search', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  const { listName, searchText } = req.body;
-  const words = wordLists[listName];
-
-  if (!words || !searchText) {
-    return res.status(400).json({ error: '無効な入力です。' });
-  }
-
-  return cachedJson(
-    res,
-    'wildcard_search',
-    { listName, searchText },
-    paging,
-    () => {
-      const regex = getCachedRegex(searchText);
-      const normalized = normalizePattern(searchText);
-
-// % がある場合は文字数が固定できないので全単語から検索する
-// % がない場合だけ、従来通り文字数インデックスで高速化する
-      const pool =
-        normalized.length && !hasMultiWildcard(normalized)
-          ? (wordsByLength[listName]?.[normalized.length] || [])
-          : words;
-
-      return {
-        results: pool.filter(word => regex.test(word))
-      };
-    }
-  );
-});
-
-// ===== API: 部分一致検索 =====
-app.post('/api/substring_search', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  const { listName, searchText } = req.body;
-  const words = wordLists[listName];
-
-  if (!words || !searchText) {
-    return res.status(400).json({ error: '無効な入力です。' });
-  }
-
-  return cachedJson(
-    res,
-    'substring_search',
-    { listName, searchText },
-    paging,
-    () => ({
-      results: words.filter(word => word.includes(normalizePattern(searchText)))
-    })
-  );
-});
-
-// ===== API: ワイルドカードしりとり =====
-app.post('/api/wildcard_shiritori', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  let {
-    listName,
-    wordPatterns,
-    firstWordPattern,
-    lastWordPattern,
-    wordCount,
-    requiredChars,
-    requiredCharMode,
-    totalLength,
-    uniquePairOnly,
-    advancedConditions
-  } = req.body;
-
-  const map = wordMap[listName];
-
-  if (!map) {
-    return res.status(400).json({ error: '無効なリストです。' });
-  }
-
-  if (!wordPatterns) {
-    if (Number.isNaN(Number(wordCount)) || Number(wordCount) < 1) {
-      return res.status(400).json({ error: '無効な単語数です。' });
-    }
-
-    wordPatterns = new Array(Number(wordCount)).fill('');
-
-    if (firstWordPattern) {
-      wordPatterns[0] = firstWordPattern;
-    }
-
-    if (lastWordPattern) {
-      wordPatterns[wordPatterns.length - 1] = lastWordPattern;
-    }
-  }
-
-  if (!Array.isArray(wordPatterns) || wordPatterns.length < 1) {
-    return res.status(400).json({ error: '無効な入力です。' });
-  }
-
-  requiredChars = normalizeRequiredChars(requiredChars);
-  const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
-
-  const cachePayload = {
-    uniquePairOnly,
-    listName,
-    wordPatterns,
-    requiredChars,
-    mode,
-    totalLength,
-    advancedConditions
-  };
-
-  return cachedJson(res, 'wildcard_shiritori', cachePayload, paging, () => {
-    let results = findWildcardShiritoriCombinations(
-      map,
-      wordPatterns,
-      requiredChars,
-      mode,
-      listName
-    );
-
-    results = finishResults(results, {
-      uniquePairOnly,
-      totalLength,
-      advancedConditions,
-      listName
-    });
-
-    return { results };
-  });
-});
-
-app.post('/api/wildcard_words', (req, res) => {
-
-    const paging =
-        normalizePaging(
-            req.body.page,
-            req.body.perPage
-        );
-
-    let {
-        listName,
-        wordPatterns,
-        requiredChars,
-        uniquePairOnly,
-        requiredCharMode
-    } = req.body;
-
-    const map = wordMap[listName];
-
-    if (!map) {
+);
+
+// ------------------------------
+// 問題一覧取得
+// GET /api/puzzles/country
+// GET /api/puzzles/capital
+// GET /api/puzzles/pokemon
+//
+// clear_count を各問題に追加して返す
+// ------------------------------
+app.get(
+    '/api/puzzles/:mode',
+    optionalAuth,
+    async (req, res) => {
+        const { mode } = req.params;
+
+    if (!isValidMode(mode)) {
         return res.status(400).json({
-            error: '無効な単語リストです。'
+            message: '無効なモードです。'
         });
     }
 
-    requiredChars =
-        normalizeRequiredChars(requiredChars);
+    const clearedColumn = getClearedColumn(mode);
 
-    const mode =
-        requiredCharMode === 'exactly'
-            ? 'exactly'
-            : 'atLeast';
+    try {
+        const puzzles = await fetchPuzzleList(mode);
 
-    // page / perPage をキーに含めると、ページ送りのたびに再計算になる
-    const { page: _page, perPage: _perPage, ...cachePayload } = req.body;
+        const player = req.auth?.player || null;
 
-    return cachedJson(
-        res,
-        'wildcard_words',
-        cachePayload,
-        paging,
-        () => {
+const clearedIds = player
+    ? player[clearedColumn] || []
+    : [];
 
-            const results =
-                findWildcardShiritoriCombinations(
-                    map,
-                    wordPatterns,
-                    requiredChars,
+const playerIdentified = Boolean(player);
+
+        return res.json({
+            puzzles,
+            cleared_ids: clearedIds,
+            player_identified: playerIdentified
+        });
+
+    } catch (error) {
+        console.error('問題一覧の取得に失敗しました。', {
+    name: error.name,
+    code: error.code
+});
+
+        return res.status(500).json({
+            message: '問題一覧の取得に失敗しました。'
+        });
+    }
+});
+
+// ------------------------------
+// 問題登録
+// POST /api/puzzles
+// country / capital / pokemon 対応
+// ------------------------------
+app.post(
+    '/api/puzzles',
+    requireAuth,
+    createPuzzleLimiter,
+    async (req, res) => {
+        const { mode, boardData } = req.body;
+
+        if (!isValidMode(mode)) {
+            return res.status(400).json({
+                message: '無効なモードです。'
+            });
+        }
+
+        const normalizedBoardData =
+            normalizeBoardData(boardData, mode);
+
+        if (!normalizedBoardData) {
+            return res.status(400).json({
+                message:
+                    '盤面は8行×5列で、1マス以上にカタカナ1文字か「F」を入力してください。（♂ ♀ Z 2 ・ はポケモンモードのみ使えます）'
+            });
+        }
+
+        try {
+            const duplicateResult = await db.query(
+                `
+                SELECT id
+                FROM puzzles
+                WHERE
+                    mode = $1
+                    AND data = $2::jsonb
+                LIMIT 1;
+                `,
+                [
                     mode,
-                    listName,
-                    false
+                    JSON.stringify(normalizedBoardData)
+                ]
+            );
+
+            if (duplicateResult.rows.length > 0) {
+                return res.status(409).json({
+                    message: '同じ盤面の問題がすでに存在します。'
+                });
+            }
+
+            const result = await db.query(
+                `
+                INSERT INTO puzzles (
+                    mode,
+                    data,
+                    creator
+                )
+                VALUES ($1, $2::jsonb, $3)
+                RETURNING
+                    id,
+                    mode,
+                    data,
+                    creator,
+                    created_at;
+                `,
+                [
+                    mode,
+                    JSON.stringify(normalizedBoardData),
+                    req.auth.nickname
+                ]
+            );
+
+            invalidatePuzzleListCache(mode);
+
+            return res.status(201).json({
+                message: '問題を登録しました。',
+                puzzle: result.rows[0]
+            });
+        } catch (error) {
+            console.error('問題登録に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message: '問題の登録に失敗しました。'
+            });
+        }
+    }
+);
+
+// ------------------------------
+// スコア更新
+// POST /api/score/update
+// country / capital / pokemon 対応
+// ------------------------------
+app.post(
+    '/api/score/update',
+    requireAuth,
+    scoreUpdateLimiter,
+    async (req, res) => {
+        const { mode, puzzleId } = req.body;
+
+        const playerId = req.auth.playerId;
+
+        if (!isValidMode(mode)) {
+            return res.status(400).json({
+                message: '無効なモードです。'
+            });
+        }
+
+        const numericPuzzleId = Number(puzzleId);
+
+        if (
+            !Number.isSafeInteger(numericPuzzleId) ||
+            numericPuzzleId <= 0
+        ) {
+            return res.status(400).json({
+                message: 'puzzleIdが不正です。'
+            });
+        }
+
+        const clearField = getClearField(mode);
+        const idListField = getClearedColumn(mode);
+
+        let client;
+
+        try {
+            client = await db.pool.connect();
+            await client.query('BEGIN');
+
+            const puzzleResult = await client.query(
+                `
+                SELECT id
+                FROM puzzles
+                WHERE id = $1 AND mode = $2
+                LIMIT 1;
+                `,
+                [numericPuzzleId, mode]
+            );
+
+            if (puzzleResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+
+                return res.status(404).json({
+                    message:
+                        '指定された問題が見つかりません。'
+                });
+            }
+
+            const playerResult = await client.query(
+                `
+                SELECT
+                    ${idListField},
+                    ${clearField}
+                FROM players
+                WHERE id = $1
+                FOR UPDATE;
+                `,
+                [playerId]
+            );
+
+            if (playerResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+
+                clearSessionCookie(res);
+
+                return res.status(401).json({
+                    message:
+                        'ログイン情報が無効です。再度ログインしてください。'
+                });
+            }
+
+            const player = playerResult.rows[0];
+
+            const clearedIds = (
+                player[idListField] || []
+            )
+                .map(value => Number(value))
+                .filter(value =>
+                    Number.isSafeInteger(value)
                 );
 
-            return {
-                results: finishResults(results, { uniquePairOnly, listName })
-            };
+            if (clearedIds.includes(numericPuzzleId)) {
+                await client.query('COMMIT');
+
+                return res.status(200).json({
+                    message:
+                        'この問題はすでにクリア済みです。',
+                    alreadyCleared: true,
+                    newScore:
+                        Number(player[clearField]) || 0
+                });
+            }
+
+            clearedIds.push(numericPuzzleId);
+
+            const updateResult = await client.query(
+                `
+                UPDATE players
+                SET
+                    ${idListField} = $2::jsonb,
+                    ${clearField} =
+                        jsonb_array_length($2::jsonb)
+                WHERE id = $1
+                RETURNING
+                    ${clearField} AS "newScore";
+                `,
+                [
+                    playerId,
+                    JSON.stringify(clearedIds)
+                ]
+            );
+
+            await client.query('COMMIT');
+
+            // クリア者数が変わるので、問題一覧のキャッシュを破棄する
+            invalidatePuzzleListCache(mode);
+
+            return res.status(200).json({
+                message:
+                    'スコアとクリア済み問題を更新しました。',
+                alreadyCleared: false,
+                newScore:
+                    Number(
+                        updateResult.rows[0].newScore
+                    ) || 0
+            });
+        } catch (error) {
+            if (client) {
+                try {
+                    await client.query('ROLLBACK');
+                } catch {
+                    // ロールバック失敗時も機密情報を出力しない
+                }
+            }
+
+            console.error('スコア更新に失敗しました。', {
+                name: error.name,
+                code: error.code
+            });
+
+            return res.status(500).json({
+                message:
+                    'スコア更新中にエラーが発生しました。'
+            });
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
-    );
-});
-// ===== API: ループしりとり =====
-app.post('/api/loop_shiritori', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  const {
-    listName,
-    pattern,
-    totalLength,
-    uniquePairOnly,
-    advancedConditions
-  } = req.body;
-
-  const map = wordMap[listName];
-
-  if (!map || !pattern) {
-    return res.status(400).json({
-      error: 'リスト名またはパターンが指定されていません。'
-    });
-  }
-
-  const cachePayload = {
-    uniquePairOnly,
-    listName,
-    pattern,
-    totalLength,
-    advancedConditions
-  };
-
-  return cachedJson(res, 'loop_shiritori', cachePayload, paging, () => {
-    let results = findLoopShiritori(map, pattern, listName);
-
-    results = finishResults(results, {
-      uniquePairOnly,
-      totalLength,
-      advancedConditions,
-      listName
-    });
-
-    return { results };
-  });
-});
-
-// ===== API: チェーンしりとり =====
-app.post('/api/chain_shiritori', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
-
-  let {
-    listName,
-    pattern,
-    requiredChars,
-    excludeChars,
-    requiredCharMode,
-    totalLength,
-    uniquePairOnly,
-    advancedConditions
-  } = req.body;
-
-  const map = wordMap[listName];
-
-  if (!map) {
-    return res.status(400).json({ error: '無効な単語リストです。' });
-  }
-
-  if (!pattern || !String(pattern).trim()) {
-    return res.status(400).json({ error: 'パターンは必須です。' });
-  }
-
-  requiredChars = normalizeRequiredChars(requiredChars);
-  excludeChars = normalizeExcludeChars(excludeChars);
-
-  const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
-
-  const cachePayload = {
-    uniquePairOnly,
-  listName,
-  pattern,
-  requiredChars,
-  excludeChars,
-  mode,
-  totalLength,
-  advancedConditions
-};
-
-  return cachedJson(res, 'chain_shiritori', cachePayload, paging, () => {
-    let results = findChainShiritori(
-  map,
-  pattern,
-  requiredChars,
-  excludeChars,
-  mode,
-  listName,
-  totalLength ? parseInt(totalLength, 10) : null
+    }
 );
-    results = finishResults(results, {
-      uniquePairOnly,
-  totalLength,
-  advancedConditions,
-  listName
-});
-    return { results };
-  });
-});
+// ------------------------------
+// ランキング取得
+// GET /api/rankings/total
+// GET /api/rankings/country
+// GET /api/rankings/capital
+// GET /api/rankings/pokemon
+// ------------------------------
+app.get('/api/rankings/:type', async (req, res) => {
+    const { type } = req.params;
 
-// ===== API: 自動生成 =====
-app.post('/api/auto_generate', (req, res) => {
-  const paging = normalizePaging(req.body.page, req.body.perPage);
+    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
+        return res.status(400).json({
+            message: '無効なランキング種別です。'
+        });
+    }
 
-  let {
-    listName,
-    minSolutions,
-    maxSolutions,
-    firstCharMode,
-    firstChar,
-    lastCharMode,
-    lastChar,
-    wordCountMode,
-    wordCount,
-    includeCharsMode,
-    includeChars,
-    excludeCharsMode,
-    excludeChars,
-    totalLengthMode,
-    totalLength,
-    uniqueWordLengths,
-    advancedConditions,
-    uniquePairOnly
-  } = req.body;
+    let scoreExpression;
 
-  const map = wordMap[listName];
+    if (type === 'country') {
+        scoreExpression = 'country_clears';
+    } else if (type === 'capital') {
+        scoreExpression = 'capital_clears';
+    } else if (type === 'pokemon') {
+        scoreExpression = 'pokemon_clears';
+    } else {
+        scoreExpression = '(country_clears + capital_clears + pokemon_clears)';
+    }
 
-  if (!map) {
-    return res.status(400).json({ error: '無効な単語リストです。' });
-  }
-
-  minSolutions = parseInt(minSolutions, 10) || 5;
-  maxSolutions = parseInt(maxSolutions, 10) || 20;
-
-  if (minSolutions < 1 || maxSolutions < 1 || minSolutions > maxSolutions) {
-    return res.status(400).json({
-      error: '解の範囲を正しく指定してください（最小 ≤ 最大）。'
-    });
-  }
-
-  const fixedWordCount =
-    wordCountMode === 'fixed'
-      ? parseInt(wordCount, 10)
-      : (parseInt(wordCount, 10) || 3);
-
-  if (!fixedWordCount || fixedWordCount < 1) {
-    return res.status(400).json({
-      error: '単語数は1以上である必要があります。'
-    });
-  }
-
-  const cachePayload = {
-    uniquePairOnly,
-    listName,
-    minSolutions,
-    maxSolutions,
-    firstCharMode,
-    firstChar,
-    lastCharMode,
-    lastChar,
-    wordCountMode,
-    wordCount: fixedWordCount,
-    includeCharsMode,
-    includeChars,
-    excludeCharsMode,
-    excludeChars,
-    totalLengthMode,
-    totalLength,
-    uniqueWordLengths,
-    advancedConditions
-  };
-
-  return cachedJson(res, 'auto_generate', cachePayload, paging, () => {
-    let fixedFirstChar =
-      firstCharMode === 'fixed' ? (firstChar ? normalizeWord(firstChar) : null) : null;
-
-    let fixedLastChar =
-      lastCharMode === 'fixed' ? (lastChar ? normalizeWord(lastChar) : null) : null;
-
-    const fixedIncludeChars =
-      includeCharsMode === 'fixed'
-        ? normalizeRequiredChars(includeChars)
-        : null;
-
-    const fixedExcludeChars =
-      excludeCharsMode === 'fixed'
-        ? normalizeExcludeChars(excludeChars)
-        : null;
-
-    const fixedTotalLength =
-      totalLengthMode === 'fixed'
-        ? parseInt(totalLength, 10)
-        : null;
-
-    const conditions = {};
-    let finalResults = [];
-
-    if (firstCharMode === 'auto') {
-      for (const char of listIndexes[listName].firstChars) {
-        let results = findShiritoriCombinations(
-          map,
-          char,
-          fixedLastChar,
-          fixedWordCount,
-          fixedIncludeChars,
-          fixedExcludeChars,
-          false,
-          false,
-          'atLeast',
-          listName,
-          {
-            totalLength: fixedTotalLength,
-            uniqueWordLengths
-          }
+    try {
+        const result = await db.query(
+            `
+            SELECT
+                ROW_NUMBER() OVER (
+                    ORDER BY ${scoreExpression} DESC, created_at ASC
+                ) AS rank,
+                nickname,
+                ${scoreExpression} AS score
+            FROM players
+            ORDER BY ${scoreExpression} DESC, created_at ASC
+            LIMIT 100;
+            `
         );
 
-        results = finishResults(results, {
-      uniquePairOnly,
-          uniqueWordLengths,
-          totalLength: fixedTotalLength,
-          advancedConditions,
-          listName
-        });
+        return res.json(result.rows);
 
-        if (
-          results.length >= minSolutions &&
-          results.length <= maxSolutions
-        ) {
-          fixedFirstChar = char;
-          finalResults = results;
-          break;
-        }
-      }
-
-      if (!fixedFirstChar) {
-        return {
-          results: [],
-          conditions,
-          message: `開始文字を「自動」で設定した場合、${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。`
-        };
-      }
-    }
-
-    conditions.firstChar = fixedFirstChar || '（指定なし）';
-
-    if (lastCharMode === 'auto') {
-      for (const char of listIndexes[listName].lastChars) {
-        let results = findShiritoriCombinations(
-          map,
-          fixedFirstChar,
-          char,
-          fixedWordCount,
-          fixedIncludeChars,
-          fixedExcludeChars,
-          false,
-          false,
-          'atLeast',
-          listName,
-          {
-            totalLength: fixedTotalLength,
-            uniqueWordLengths
-          }
-        );
-
-        results = finishResults(results, {
-      uniquePairOnly,
-          uniqueWordLengths,
-          totalLength: fixedTotalLength,
-          advancedConditions,
-          listName
-        });
-
-        if (
-          results.length >= minSolutions &&
-          results.length <= maxSolutions
-        ) {
-          fixedLastChar = char;
-          finalResults = results;
-          break;
-        }
-      }
-
-      if (!fixedLastChar) {
-        return {
-          results: [],
-          conditions,
-          message: `終了文字を「自動」で設定した場合、${minSolutions}個以上${maxSolutions}個以下の条件が見つかりませんでした。`
-        };
-      }
-    }
-
-    conditions.lastChar = fixedLastChar || '（指定なし）';
-
-    if (finalResults.length === 0) {
-      finalResults = findShiritoriCombinations(
-        map,
-        fixedFirstChar,
-        fixedLastChar,
-        fixedWordCount,
-        fixedIncludeChars,
-        fixedExcludeChars,
-        false,
-        false,
-        'atLeast',
-        listName,
-        {
-          totalLength: fixedTotalLength,
-          uniqueWordLengths
-        }
-      );
-
-      finalResults = finishResults(finalResults, {
-      uniquePairOnly,
-        uniqueWordLengths,
-        totalLength: fixedTotalLength,
-        advancedConditions,
-        listName
-      });
-    }
-
-    conditions.wordCount = fixedWordCount;
-    conditions.includeChars =
-      fixedIncludeChars ? fixedIncludeChars.join(',') : '（指定なし）';
-    conditions.excludeChars =
-      fixedExcludeChars ? fixedExcludeChars.join(',') : '（指定なし）';
-    conditions.totalLength = fixedTotalLength || '（指定なし）';
-    conditions.uniqueWordLengths = uniqueWordLengths ? 'ON' : 'OFF';
-
-    if (totalLengthMode === 'auto' && finalResults.length > maxSolutions) {
-      const byLength = Object.create(null);
-
-      for (const path of finalResults) {
-        const len = path.reduce((sum, word) => sum + word.length, 0);
-
-        if (!byLength[len]) {
-          byLength[len] = [];
-        }
-
-        byLength[len].push(path);
-      }
-
-      for (const len of Object.keys(byLength).map(Number).sort((a, b) => a - b)) {
-        if (
-          byLength[len].length >= minSolutions &&
-          byLength[len].length <= maxSolutions
-        ) {
-          finalResults = byLength[len];
-          conditions.totalLength = len;
-          break;
-        }
-      }
-    }
-
-    if (finalResults.length < minSolutions) {
-      return {
-        results: [],
-        conditions,
-        message: `解の個数が範囲外です。最小${minSolutions}個必要ですが、${finalResults.length}個しか見つかりませんでした。`
-      };
-    }
-
-    if (finalResults.length > maxSolutions) {
-      finalResults = finalResults.slice(0, maxSolutions);
-    }
-
-    return {
-      results: finalResults,
-      conditions
-    };
-  });
+    } catch (error) {
+        console.error('ランキング取得に失敗しました。', {
+    name: error.name,
+    code: error.code
 });
 
-// ===== 起動時キャッシュ生成（PRECOMPUTE=0 で無効化） =====
-if (process.env.PRECOMPUTE !== '0') {
-  precomputeStartupShiritoriCache();
+// ------------------------------
+// GET /api/rankings/:type/me
+// ログイン中プレイヤーの順位（上位100位に入っていなくても取得できる）
+// ------------------------------
+function getRankingScoreExpression(type, alias) {
+    const prefix = alias ? `${alias}.` : '';
+
+    if (type === 'country') return `${prefix}country_clears`;
+    if (type === 'capital') return `${prefix}capital_clears`;
+    if (type === 'pokemon') return `${prefix}pokemon_clears`;
+
+    return `(${prefix}country_clears + ${prefix}capital_clears + ${prefix}pokemon_clears)`;
 }
 
-// ===== サーバー起動 =====
-app.listen(port, () => {
-  console.log(`Server listening at http://localhost:${port}`);
+app.get('/api/rankings/:type/me', requireAuth, async (req, res) => {
+    const { type } = req.params;
+
+    if (!['total', 'country', 'capital', 'pokemon'].includes(type)) {
+        return res.status(400).json({
+            message: '無効なランキング種別です。'
+        });
+    }
+
+    // type は上で許可リストと照合済みのため、式をそのまま埋め込んでも安全
+    const mine = getRankingScoreExpression(type, 'pl');
+    const other = getRankingScoreExpression(type, 'p');
+
+    try {
+        // 一覧と同じ並び順（スコア降順、同点は登録が早い順）で順位を数える
+        const result = await db.query(
+            `
+            SELECT
+                (
+                    SELECT COUNT(*)::integer
+                    FROM players p
+                    WHERE ${other} > ${mine}
+                       OR (${other} = ${mine} AND p.created_at < pl.created_at)
+                ) + 1 AS rank,
+                ${mine} AS score,
+                (SELECT COUNT(*)::integer FROM players) AS total
+            FROM players pl
+            WHERE pl.id = $1;
+            `,
+            [req.auth.playerId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: 'プレイヤーが見つかりません。'
+            });
+        }
+
+        return res.json(result.rows[0]);
+    } catch (error) {
+        console.error('自分の順位の取得に失敗しました。', {
+            name: error.name,
+            code: error.code
+        });
+
+        return res.status(500).json({
+            message: '順位の取得中にエラーが発生しました。'
+        });
+    }
+});
+
+        return res.status(500).json({
+            message: 'ランキングの取得に失敗しました。'
+        });
+    }
+});
+
+// ------------------------------
+// 404
+// ------------------------------
+app.use((req, res) => {
+    res.status(404).json({
+        message: 'Not Found'
+    });
+});
+
+// ------------------------------
+// 初期化と起動
+// ------------------------------
+(async () => {
+    // テーブル作成・初期問題の投入は migrate.js（デプロイ時）で行う。
+    // 移行できていない環境で一時的に使いたい場合のみ、
+    // 環境変数 RUN_MIGRATIONS_ON_START=true で起動時にも実行できる。
+    if (process.env.RUN_MIGRATIONS_ON_START === 'true') {
+        await runMigrations();
+    } else {
+        await warnIfSchemaMissing();
+    }
+
+    // 期限切れセッションを削除（以降は1時間ごと）
+    await deleteExpiredSessions();
+
+    setInterval(
+        deleteExpiredSessions,
+        SESSION_CLEANUP_INTERVAL_MS
+    ).unref();
+
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+})().catch(error => {
+    console.error(
+        'サーバーを起動できませんでした。',
+        {
+            name: error.name,
+            code: error.code
+        }
+    );
+
+    process.exit(1);
 });
