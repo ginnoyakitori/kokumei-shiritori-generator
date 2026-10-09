@@ -713,7 +713,7 @@ if (
         }
     };
 
-    const getAdvancedConditionsForRequest = () => {
+    const getAdvancedConditionsForRequestRaw = () => {
         const explicit = getExplicitAdvancedConditions();
         const explicitKeys = Object.keys(explicit);
         const chatKeys = Object.keys(chatAdvancedConditions || {});
@@ -732,6 +732,42 @@ if (
 
         return { ...chatAdvancedConditions, ...explicit };
     };
+
+    // --- かな専用の高度条件（濁音・半濁音・小文字）は英語リストでは意味が無いので無効化 ---
+    const LATIN_LISTS = new Set(['countries-english.txt']);
+    const KANA_ONLY_ADVANCED_FIELDS = [
+        'dakutenCountMode', 'dakutenCountValue',
+        'handakutenCountMode', 'handakutenCountValue',
+        'smallKanaCountMode', 'smallKanaCountValue'
+    ];
+    const KANA_ONLY_ADVANCED_KEYS = ['dakutenCount', 'handakutenCount', 'smallKanaCount'];
+    const isLatinListSelected = () => LATIN_LISTS.has(listNameSelect.value);
+
+    const getAdvancedConditionsForRequest = () => {
+        const raw = getAdvancedConditionsForRequestRaw();
+        if (!raw || !isLatinListSelected()) return raw;
+        const filtered = { ...raw };
+        KANA_ONLY_ADVANCED_KEYS.forEach(key => delete filtered[key]);
+        return Object.keys(filtered).length ? filtered : null;
+    };
+
+    const updateListDependentUI = () => {
+        const isLatin = isLatinListSelected();
+        KANA_ONLY_ADVANCED_FIELDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (isLatin) {
+                el.value = '';
+            }
+            el.disabled = isLatin;
+            el.closest('.form-group')?.classList.toggle('disabled', isLatin);
+        });
+        if (isLatin) {
+            KANA_ONLY_ADVANCED_KEYS.forEach(key => delete chatAdvancedConditions[key]);
+        }
+    };
+    listNameSelect.addEventListener('change', updateListDependentUI);
+    updateListDependentUI();
 
     const handleClearAdvancedConditions = () => {
         chatAdvancedConditions = {};
@@ -972,15 +1008,18 @@ if (
         resultsDiv.innerHTML = '';
         if (data.error) {
             resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
+            if (prevPageBtn) prevPageBtn.disabled = true;
+            if (nextPageBtn) nextPageBtn.disabled = true;
             return;
         }
+        // 集計表示などページ情報が無いレスポンスでは、前へ/次へを無効にする
+        const hasPaging = Number.isFinite(data.page) && Number.isFinite(data.totalPages);
         if (prevPageBtn) {
-            prevPageBtn.disabled = data.page <= 1;
+            prevPageBtn.disabled = !hasPaging || data.page <= 1;
         }
-
         if (nextPageBtn) {
-            nextPageBtn.disabled = data.page >= data.totalPages;
-       }
+            nextPageBtn.disabled = !hasPaging || data.page >= data.totalPages;
+        }
 
         // 自動生成モードの結果表示
         if (mode === 'autoGenerate') {

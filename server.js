@@ -1404,13 +1404,6 @@ function findLoopShiritori(map, pattern, listName) {
     .sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 
-function isDigitPatternChar(char) {
-  return /^[0-9]$/.test(String(char || '').normalize('NFKC'));
-}
-
-function patternHasMultiWildcard(pattern) {
-  return /[%％]/.test(normalizePattern(pattern));
-}
 
 /**
  * チェーン検索用:
@@ -1586,7 +1579,7 @@ function findChainShiritori(
   const p = normalizePattern(pattern);
 
   // % が含まれていない場合は、パターン全体の文字数が固定される
-  const fixedLengthMode = !patternHasMultiWildcard(p);
+  const fixedLengthMode = !hasMultiWildcard(p);
   const fixedLength = p.length;
 
   // 合計文字数が指定されている場合はそれを優先して探索上限にする。

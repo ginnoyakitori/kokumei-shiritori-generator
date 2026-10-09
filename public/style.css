@@ -458,7 +458,48 @@ select {
     font-size: 0.95em;
 }
 
-/* 初期状態で固定状態の入力を表示 */
-.auto-condition-group:has(.condition-mode-select:not([value="none"])) .condition-input-container {
-    display: block;
+/* ===== ボタン・メッセージ・無効状態 ===== */
+button.secondary {
+    padding: 8px 16px;
+    border: 1px solid #b8c4cf;
+    border-radius: 5px;
+    background-color: #fff;
+    color: #333;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+button.secondary:hover:not(:disabled) {
+    background-color: #eef3f7;
+}
+
+button.secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.error-message {
+    color: #9b1c1c;
+    background-color: #fdecea;
+    border: 1px solid #f5c2c0;
+    border-radius: 5px;
+    padding: 10px 15px;
+}
+
+.loading-message {
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* かな専用条件など、現在のリストでは使えない項目 */
+.form-group.disabled {
+    opacity: 0.5;
+}
+
+.form-group.disabled select,
+.form-group.disabled input {
+    cursor: not-allowed;
 }
