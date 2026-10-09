@@ -20,6 +20,7 @@
     --color-border: #555;
     --color-success: #6ddf6d;
     --color-danger: #e30000;
+    color-scheme: dark;
 }
 
 /* ------------------------------ */
@@ -1230,4 +1231,128 @@ button {
 button:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+}
+
+/* ---------------------------------------------------- */
+/* 追加: アクセシビリティ・ルール折りたたみ・順位固定・シェア */
+/* ---------------------------------------------------- */
+[hidden] {
+    display: none !important;
+}
+
+/* 盤面のセル（button 化に伴うリセット） */
+button.cell {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    font-family: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.cell {
+    position: relative;
+}
+
+/* 選択中は色に加えて、内側の枠と選んだ順の数字で示す */
+.cell.selected {
+    box-shadow: inset 0 0 0 4px #1c1c1c;
+}
+
+.cell.selected::after {
+    content: attr(data-order);
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 1.5em;
+    padding: 0 2px;
+    border-radius: 999px;
+    background: #1c1c1c;
+    color: var(--color-accent);
+    font-size: 0.45em;
+    font-weight: bold;
+    line-height: 1.5em;
+    text-align: center;
+}
+
+.cell:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: -5px;
+    z-index: 1;
+}
+
+.create-input:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+.switch-link:focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.selected-word {
+    min-height: 1.6em;
+    margin: 0 0 4px;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--color-accent);
+}
+
+/* ルールの折りたたみ */
+details.game-rules > summary {
+    cursor: pointer;
+    padding: 6px 0;
+    font-weight: bold;
+    color: var(--color-accent);
+    list-style-position: inside;
+}
+
+details.game-rules[open] > summary {
+    margin-bottom: 8px;
+}
+
+/* ランキング: 自分の順位を固定表示 */
+.ranking-my-rank {
+    position: sticky;
+    top: 8px;
+    z-index: 5;
+    margin: 10px 0;
+    padding: 10px 12px;
+    border: 2px solid var(--color-accent);
+    border-radius: 8px;
+    background: var(--color-tertiary);
+    text-align: center;
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.you-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    color: #1c1c1c;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+/* 動きを抑える設定に対応 */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    button:hover,
+    button:active {
+        transform: none !important;
+    }
 }
