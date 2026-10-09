@@ -3,12 +3,14 @@
 // =============================
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static('.'));
+// 公開するのは public/ だけ（server.js や package.json を外部に見せない）
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ===== ファイル設定 =====
 const KOKUMEI_KEY = 'kokumei.txt';
@@ -17,6 +19,7 @@ const KOKUMEI_SHUTOMEI_KEY = 'kokumei_shutomei.txt';
 const POKEMON_KEY = 'pokemon.txt';
 const COUNTRIES_ONLY_KEY = 'countries-only.txt';
 const CAPITALS_ONLY_KEY = 'capitals-only.txt';
+const COUNTRIES_ENGLISH_KEY = 'countries-english.txt';
 
 // ===== データ格納 =====
 const wordLists = {};
@@ -42,7 +45,8 @@ const STARTUP_PRECOMPUTE_WORD_LIMITS = {
   [KOKUMEI_KEY]: 5,
   [SHUTOMEI_KEY]: 5,
   [COUNTRIES_ONLY_KEY]: 5,
-  [CAPITALS_ONLY_KEY]: 5
+  [CAPITALS_ONLY_KEY]: 5,
+  [COUNTRIES_ENGLISH_KEY]: 3
 };
 
 function getStartupShiritoriCacheKey(listName, wordCount) {
@@ -220,17 +224,59 @@ function buildListIndexes(listName) {
 }
 
 // ===== データロード =====
-function loadWordFile(fileName) {
+// 単語ファイルは data/ を優先し、無ければプロジェクト直下を探す
+function resolveDataPath(fileName) {
+  const inData = path.join(__dirname, 'data', fileName);
+  return fs.existsSync(inData) ? inData : path.join(__dirname, fileName);
+}
+
+// 英語リスト用: 判定には正規化した文字列（大文字・英字のみ）を使い、
+// 表示だけ元の名前に戻す。 listName -> { 'UNITEDSTATES': 'United States' }
+const displayNames = {};
+
+function normalizeLatinWord(raw) {
+  return String(raw)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // アクセント除去 (Côte -> Cote)
+    .replace(/[^A-Za-z]/g, '')        // スペース・ハイフン・アポストロフィ除去
+    .toUpperCase();
+}
+
+function loadWordFile(fileName, { latin = false } = {}) {
   try {
-    return fs.readFileSync(fileName, 'utf8')
-      .split('\n')
+    const lines = fs.readFileSync(resolveDataPath(fileName), 'utf8')
+      .replace(/^\uFEFF/, '') // BOM除去
+      .split(/\r?\n/)
       .map(w => w.trim())
-      .filter(Boolean)
-      .sort(collator.compare);
+      .filter(Boolean);
+
+    if (!latin) {
+      return [...new Set(lines)].sort(collator.compare);
+    }
+
+    const names = Object.create(null);
+    for (const raw of lines) {
+      const key = normalizeLatinWord(raw);
+      if (key && !names[key]) names[key] = raw;
+    }
+    displayNames[fileName] = names;
+    return Object.keys(names).sort(collator.compare);
   } catch (e) {
     console.warn(`Warning: Could not load ${fileName}: ${e.message}`);
     return [];
   }
+}
+
+// レスポンスの単語を表示用の名前に戻す（英語リストのみ）
+function toDisplay(listName, response) {
+  const names = displayNames[listName];
+  if (!names || !response || !Array.isArray(response.results)) return response;
+  return {
+    ...response,
+    results: response.results.map(r =>
+      Array.isArray(r) ? r.map(w => names[w] || w) : (names[r] || r)
+    )
+  };
 }
 
 function loadWordData() {
@@ -239,6 +285,7 @@ function loadWordData() {
   wordLists[POKEMON_KEY] = loadWordFile(POKEMON_KEY);
   wordLists[COUNTRIES_ONLY_KEY] = loadWordFile(COUNTRIES_ONLY_KEY);
   wordLists[CAPITALS_ONLY_KEY] = loadWordFile(CAPITALS_ONLY_KEY);
+  wordLists[COUNTRIES_ENGLISH_KEY] = loadWordFile(COUNTRIES_ENGLISH_KEY, { latin: true });
 
   wordLists[KOKUMEI_SHUTOMEI_KEY] = [
     ...new Set([
@@ -256,12 +303,17 @@ function getAllWords(listName) {
   return listIndexes[listName]?.allWords || [];
 }
 
+// ===== パターン正規化（全角→半角・大文字化・空白除去） =====
+function normalizePattern(pattern) {
+  return String(pattern || '').normalize('NFKC').toUpperCase().replace(/\s+/g, '');
+}
+
 // ===== 正規表現 =====
 
  function patternToRegex(pattern) {
   if (!pattern || !String(pattern).trim()) return null;
 
-  const normalized = String(pattern).normalize('NFKC');
+  const normalized = normalizePattern(pattern);
 
   let regexString = '';
 
@@ -303,7 +355,7 @@ function getAllWords(listName) {
 }
 
 function getCachedRegex(pattern) {
-  const key = String(pattern || '').normalize('NFKC');
+  const key = normalizePattern(pattern);
   if (!key.trim()) return null;
 
   if (!regexCache[key]) {
@@ -314,7 +366,7 @@ function getCachedRegex(pattern) {
 }
 
 function hasMultiWildcard(pattern) {
-  return /[%％]/.test(String(pattern || '').normalize('NFKC'));
+  return /[%％]/.test(normalizePattern(pattern));
 }
 
 function isDigitPatternChar(char) {
@@ -322,7 +374,7 @@ function isDigitPatternChar(char) {
 }
 
 function getWildcardPatternCandidatePool(listName, pattern, allWords) {
-  const normalizedPattern = String(pattern || '').normalize('NFKC');
+  const normalizedPattern = normalizePattern(pattern);
 
   if (!normalizedPattern.trim()) {
     return allWords;
@@ -350,7 +402,7 @@ function getWildcardPatternCandidatePool(listName, pattern, allWords) {
  * 既に bindings["1"] = "リ" なら、次の単語内の 1 も必ず "リ" になる。
  */
 function matchPatternWithGlobalDigitBindings(pattern, word, bindings = {}) {
-  const normalizedPattern = String(pattern || '').normalize('NFKC');
+  const normalizedPattern = normalizePattern(pattern);
 
   // 空パターンは「任意の単語」として扱う
   if (!normalizedPattern.trim()) {
@@ -477,13 +529,13 @@ function paginateSearchResponse(response, paging) {
 function cachedJson(res, name, payload, paging, producer) {
   const cached = getSearchCache(name, payload);
   if (cached) {
-    return res.json(paginateSearchResponse(cached, paging));
+    return res.json(toDisplay(payload.listName, paginateSearchResponse(cached, paging)));
   }
 
   const response = producer();
   setSearchCache(name, payload, response);
 
-  return res.json(paginateSearchResponse(response, paging));
+  return res.json(toDisplay(payload.listName, paginateSearchResponse(response, paging)));
 }// ===== 条件判定 =====
 function checkRequiredChars(path, requiredChars, requiredCharMode = 'atLeast') {
   if (!requiredChars || requiredChars.length === 0) return true;
@@ -1293,7 +1345,7 @@ continue;
 
 // ===== ループ検索 =====
 function findLoopShiritori(map, pattern, listName) {
-  const p = String(pattern || '').normalize('NFKC');
+  const p = normalizePattern(pattern);
   const L = p.length;
   const regex = getCachedRegex(p);
   const results = [];
@@ -1357,7 +1409,7 @@ function isDigitPatternChar(char) {
 }
 
 function patternHasMultiWildcard(pattern) {
-  return /[%％]/.test(String(pattern || '').normalize('NFKC'));
+  return /[%％]/.test(normalizePattern(pattern));
 }
 
 /**
@@ -1372,7 +1424,7 @@ function patternHasMultiWildcard(pattern) {
  * => 1 = リ として prefix OK
  */
 function matchChainPatternPrefixWithBindings(pattern, text, bindings = {}) {
-  const patternChars = [...String(pattern || '').normalize('NFKC')];
+  const patternChars = [...normalizePattern(pattern)];
   const textChars = [...String(text || '').normalize('NFKC')];
 
   const results = [];
@@ -1452,7 +1504,7 @@ function matchChainPatternPrefixWithBindings(pattern, text, bindings = {}) {
  * 数字はチェーン全体で共有される。
  */
 function matchChainPatternFullWithBindings(pattern, text, bindings = {}) {
-  const patternChars = [...String(pattern || '').normalize('NFKC')];
+  const patternChars = [...normalizePattern(pattern)];
   const textChars = [...String(text || '').normalize('NFKC')];
 
   const results = [];
@@ -1531,7 +1583,7 @@ function findChainShiritori(
   listName,
   totalLength = null
 ) {
-  const p = String(pattern || '').normalize('NFKC');
+  const p = normalizePattern(pattern);
 
   // % が含まれていない場合は、パターン全体の文字数が固定される
   const fixedLengthMode = !patternHasMultiWildcard(p);
@@ -1703,22 +1755,34 @@ function findChainShiritori(
     .sort((a, b) => collator.compare(a.join(''), b.join('')));
 }
 // ===== 入力正規化 =====
+function normalizeCharToken(c) {
+  return String(c).normalize('NFKC').toUpperCase();
+}
+
 function normalizeExcludeChars(value) {
   if (!value) return null;
 
+  let list;
   if (Array.isArray(value)) {
-    return value.filter(Boolean);
+    list = value;
+  } else {
+    // 「ワ,パ」「ワパ」どちらでも1文字ずつに分解する（カンマ自体は除外文字にしない）
+    list = String(value)
+      .split(/[,、\s]+/)
+      .flatMap(part => (part.length > 1 ? [...part] : [part]));
   }
 
-  const str = String(value).trim();
-  return str ? str.split('') : null;
+  list = list.filter(Boolean).map(normalizeCharToken);
+  return list.length ? list : null;
 }
 
 function normalizeRequiredChars(value) {
   if (!Array.isArray(value)) return null;
-  return value.length ? value.filter(Boolean) : null;
+  const list = value.filter(Boolean).map(normalizeCharToken);
+  return list.length ? list : null;
 }
-``// ===== 起動前ロード =====
+
+// ===== 起動前ロード =====
 console.log('Loading word data...');
 loadWordData();
 console.log('Word data loaded successfully!');
@@ -1872,8 +1936,8 @@ app.post('/api/shiritori', (req, res) => {
     return res.status(400).json({ error: '無効な単語リストです。' });
   }
 
-  firstChar = firstChar || null;
-  lastChar = lastChar || null;
+  firstChar = firstChar ? normalizeWord(firstChar) : null;
+  lastChar = lastChar ? normalizeWord(lastChar) : null;
   requiredChars = normalizeRequiredChars(requiredChars);
   excludeChars = normalizeExcludeChars(excludeChars);
 
@@ -2050,6 +2114,7 @@ app.post('/api/word_count_shiritori', (req, res) => {
   }
 
   const cachePayload = {
+    uniquePairOnly,
     listName,
     wordCountPatterns,
     allowPermutation,
@@ -2109,6 +2174,7 @@ app.post('/api/word_count_shiritori', (req, res) => {
     }
 
     results = finishResults(results, {
+      uniquePairOnly,
       uniqueWordLengths,
       totalLength,
       advancedConditions,
@@ -2137,7 +2203,7 @@ app.post('/api/wildcard_search', (req, res) => {
     paging,
     () => {
       const regex = getCachedRegex(searchText);
-      const normalized = String(searchText).normalize('NFKC');
+      const normalized = normalizePattern(searchText);
 
 // % がある場合は文字数が固定できないので全単語から検索する
 // % がない場合だけ、従来通り文字数インデックスで高速化する
@@ -2170,7 +2236,7 @@ app.post('/api/substring_search', (req, res) => {
     { listName, searchText },
     paging,
     () => ({
-      results: words.filter(word => word.includes(searchText))
+      results: words.filter(word => word.includes(normalizePattern(searchText)))
     })
   );
 });
@@ -2222,6 +2288,7 @@ app.post('/api/wildcard_shiritori', (req, res) => {
   const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
   const cachePayload = {
+    uniquePairOnly,
     listName,
     wordPatterns,
     requiredChars,
@@ -2240,6 +2307,7 @@ app.post('/api/wildcard_shiritori', (req, res) => {
     );
 
     results = finishResults(results, {
+      uniquePairOnly,
       totalLength,
       advancedConditions,
       listName
@@ -2281,10 +2349,13 @@ app.post('/api/wildcard_words', (req, res) => {
             ? 'exactly'
             : 'atLeast';
 
+    // page / perPage をキーに含めると、ページ送りのたびに再計算になる
+    const { page: _page, perPage: _perPage, ...cachePayload } = req.body;
+
     return cachedJson(
         res,
         'wildcard_words',
-        req.body,
+        cachePayload,
         paging,
         () => {
 
@@ -2298,7 +2369,9 @@ app.post('/api/wildcard_words', (req, res) => {
                     false
                 );
 
-            return { results };
+            return {
+                results: finishResults(results, { uniquePairOnly, listName })
+            };
         }
     );
 });
@@ -2310,6 +2383,7 @@ app.post('/api/loop_shiritori', (req, res) => {
     listName,
     pattern,
     totalLength,
+    uniquePairOnly,
     advancedConditions
   } = req.body;
 
@@ -2322,6 +2396,7 @@ app.post('/api/loop_shiritori', (req, res) => {
   }
 
   const cachePayload = {
+    uniquePairOnly,
     listName,
     pattern,
     totalLength,
@@ -2332,6 +2407,7 @@ app.post('/api/loop_shiritori', (req, res) => {
     let results = findLoopShiritori(map, pattern, listName);
 
     results = finishResults(results, {
+      uniquePairOnly,
       totalLength,
       advancedConditions,
       listName
@@ -2372,6 +2448,7 @@ app.post('/api/chain_shiritori', (req, res) => {
   const mode = requiredCharMode === 'exactly' ? 'exactly' : 'atLeast';
 
   const cachePayload = {
+    uniquePairOnly,
   listName,
   pattern,
   requiredChars,
@@ -2392,6 +2469,7 @@ app.post('/api/chain_shiritori', (req, res) => {
   totalLength ? parseInt(totalLength, 10) : null
 );
     results = finishResults(results, {
+      uniquePairOnly,
   totalLength,
   advancedConditions,
   listName
@@ -2452,6 +2530,7 @@ app.post('/api/auto_generate', (req, res) => {
   }
 
   const cachePayload = {
+    uniquePairOnly,
     listName,
     minSolutions,
     maxSolutions,
@@ -2473,10 +2552,10 @@ app.post('/api/auto_generate', (req, res) => {
 
   return cachedJson(res, 'auto_generate', cachePayload, paging, () => {
     let fixedFirstChar =
-      firstCharMode === 'fixed' ? (firstChar || null) : null;
+      firstCharMode === 'fixed' ? (firstChar ? normalizeWord(firstChar) : null) : null;
 
     let fixedLastChar =
-      lastCharMode === 'fixed' ? (lastChar || null) : null;
+      lastCharMode === 'fixed' ? (lastChar ? normalizeWord(lastChar) : null) : null;
 
     const fixedIncludeChars =
       includeCharsMode === 'fixed'
@@ -2516,6 +2595,7 @@ app.post('/api/auto_generate', (req, res) => {
         );
 
         results = finishResults(results, {
+      uniquePairOnly,
           uniqueWordLengths,
           totalLength: fixedTotalLength,
           advancedConditions,
@@ -2563,6 +2643,7 @@ app.post('/api/auto_generate', (req, res) => {
         );
 
         results = finishResults(results, {
+      uniquePairOnly,
           uniqueWordLengths,
           totalLength: fixedTotalLength,
           advancedConditions,
@@ -2609,6 +2690,7 @@ app.post('/api/auto_generate', (req, res) => {
       );
 
       finalResults = finishResults(finalResults, {
+      uniquePairOnly,
         uniqueWordLengths,
         totalLength: fixedTotalLength,
         advancedConditions,
@@ -2667,6 +2749,11 @@ app.post('/api/auto_generate', (req, res) => {
     };
   });
 });
+
+// ===== 起動時キャッシュ生成（PRECOMPUTE=0 で無効化） =====
+if (process.env.PRECOMPUTE !== '0') {
+  precomputeStartupShiritoriCache();
+}
 
 // ===== サーバー起動 =====
 app.listen(port, () => {
