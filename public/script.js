@@ -1,2793 +1,1148 @@
-// keshimasu-client/script.js
-// 国名ケシマス----// 国名ケシマス + 首都名ケシマス + ポケモンケシマス 統合版
-// API URL
-// ----------------------------------------------------
-const API_BASE_URL = '/api';
+document.addEventListener('DOMContentLoaded', () => {
+    // --- 共通要素の取得 ---
+    const modeSelect = document.getElementById('modeSelect');
+    const listNameSelect = document.getElementById('listName'); // 共通リスト
+    const resultsDiv = document.getElementById('results');
+    const searchButtons = document.querySelectorAll('.search-btn');
+    const resultPageInput = document.getElementById('resultPage');
+    const resultsPerPageInput = document.getElementById('resultsPerPage');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
 
-// ----------------------------------------------------
-// 1. 定数と初期データ
-// ----------------------------------------------------
-let allPuzzles = {
-    country: {},
-    capital: {},
-    pokemon: {}
+    const modeSections = {
+shiritori: document.getElementById('shiritoriMode'),
+wildcardShiritori: document.getElementById('wildcardShiritoriMode'),
+wildcardWords: document.getElementById('wildcardWordsMode'),
+wordCountShiritori: document.getElementById('wordCountShiritoriMode'),
+loop: document.getElementById('loopMode'),
+chain: document.getElementById('chainMode'),
+autoGenerate: document.getElementById('autoGenerateMode'),
+wildcard: document.getElementById('wildcardMode'),
+substring: document.getElementById('substringMode')
 };
 
-let COUNTRY_DICT = [];
-let CAPITAL_DICT = [];
-let POKEMON_DICT = [];
-
-// ワード判定を高速にするための Set（配列と同じ内容）
-const DICT_SETS = {
-    country: new Set(),
-    capital: new Set(),
-    pokemon: new Set()
-};
-
-let boardData = [];
-let initialPlayData = [];
-let selectedCells = [];
-let usedWords = [];
-
-let isCountryMode = true; // 既存互換用
-let currentMode = 'country';
-
-let isCreationPlay = false;
-let currentDictionary = new Set(); // 判定用（Set）。一覧表示には COUNTRY_DICT などの配列を使う
-let currentPuzzleIndex = -1;
-let currentPuzzleId = null; // 現在プレイ中の問題ID（作問モードではnull）
-let currentListMode = 'country';
-
-// IME入力中かどうかを判定するフラグ（作問モード用）
-let isComposing = false;
-
-let currentPlayerNickname = null;
-let isGuestPlayer = false; // ゲストとしてプレイ中か（ニックネームの文字列では判定しない）
-let currentPlayerId = null;
-
-let playerStats = {
-    country_clears: 0,
-    capital_clears: 0,
-    pokemon_clears: 0
-};
-
-// ----------------------------------------------------
-// DOM要素の取得
-// ----------------------------------------------------
-const screens = {
-    auth: document.getElementById('auth-screen'),
-    home: document.getElementById('home-screen'),
-    mainGame: document.getElementById('main-game-screen'),
-    create: document.getElementById('create-puzzle-screen'),
-    ranking: document.getElementById('ranking-screen'),
-    wordList: document.getElementById('word-list-screen'),
-    puzzleList: document.getElementById('puzzle-list-screen')
-};
-
-const appTitleElement = document.getElementById('app-title');
-const boardElement = document.getElementById('board');
-const eraseButton = document.getElementById('erase-button');
-const createBoardElement = document.getElementById('create-board');
-const btnInputComplete = document.getElementById('btn-input-complete');
-const resetBtn = document.getElementById('reset-button');
-
-const inputNickname = document.getElementById('nickname-input');
-const inputPasscode = document.getElementById('passcode-input');
-const btnLoginSubmit = document.getElementById('login-btn');
-const btnRegisterSubmit = document.getElementById('signup-btn');
-const btnGuestPlay = document.getElementById('guest-play-btn');
-
-const welcomeMessage = document.getElementById('welcome-message');
-
-const wordListContent = document.getElementById('word-list-content');
-const wordListTabs = document.getElementById('word-list-tabs');
-
-// ----------------------------------------------------
-// ユーティリティ関数
-// ----------------------------------------------------
-
-/**
- * HTMLへ埋め込む文字列を安全化する
- * サーバーや利用者から取得した文字列をinnerHTMLへ入れる前に使用する
- */
-// ----------------------------------------------------
-// UI部品: 通信リトライ・待機表示・トースト・モーダル・1手戻す
-// ----------------------------------------------------
-
-// ---------- サーバー起動待ちの表示と自動リトライ ----------
-// Renderの無料プランは、しばらく使われないとスリープする。
-// 復帰まで最大1分ほどかかるため、待っていることを伝えつつ自動で再試行する。
-const RETRYABLE_STATUSES = new Set([502, 503, 504]);
-const RETRY_DELAY_MS = 4000;
-const SLOW_REQUEST_NOTICE_MS = 2500;
-let slowRequestCount = 0;
-
-function setServerNotice(message) {
-    let notice = document.getElementById('server-notice');
-
-    if (!notice) {
-        notice = document.createElement('div');
-        notice.id = 'server-notice';
-        notice.setAttribute('role', 'status');
-        notice.setAttribute('aria-live', 'polite');
-        document.body.appendChild(notice);
-    }
-
-    notice.textContent = message;
-}
-
-function hideServerNotice() {
-    const notice = document.getElementById('server-notice');
-
-    if (notice) {
-        notice.remove();
-    }
-}
-
-// GETと、やり直しても副作用のないログインだけ自動で再試行する
-// （登録・スコア更新などは二重実行を避けるため再試行しない）
-function getRetryCount(url, options) {
-    const method = String(options?.method || 'GET').toUpperCase();
-
-    if (method === 'GET') return 8;
-    if (String(url).endsWith('/player/login')) return 5;
-
-    return 0;
-}
-
-async function fetchWithRetry(url, options) {
-    const retries = getRetryCount(url, options);
-    let noticeShown = false;
-
-    const showNotice = (message) => {
-        if (!noticeShown) {
-            noticeShown = true;
-            slowRequestCount++;
+    // ヘルパー関数: 要素が存在すれば値を、なければデフォルト値を返す
+    const getVal = (id) => document.getElementById(id)?.value || '';
+    const getChecked = (id) => document.getElementById(id)?.checked || false;
+    const setVal = (id, value) => {
+        const element = document.getElementById(id);
+        if (element && value !== undefined && value !== null) {
+            element.value = value;
         }
-
-        setServerNotice(message);
+    };
+    const setChecked = (id, checked) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.checked = Boolean(checked);
+        }
+    };
+    const getPagingRequest = () => ({
+        page: Math.max(1, parseInt(resultPageInput?.value, 10) || 1),
+        perPage: Math.min(500, Math.max(1, parseInt(resultsPerPageInput?.value, 10) || 100))
+    });
+    const runActiveSearch = () => {
+        const activeSection = modeSections[modeSelect.value];
+        const button = activeSection?.querySelector('.search-btn');
+        if (button) button.click();
     };
 
-    const slowTimer = setTimeout(() => {
-        showNotice(
-            'サーバーに接続しています…（しばらく使っていなかった場合、最大1分ほどかかります）'
-        );
-    }, SLOW_REQUEST_NOTICE_MS);
+    // --- 1. ビュー切り替えロジック ---
+    const updateModeView = () => {
+        const selectedMode = modeSelect.value;
+        Object.keys(modeSections).forEach(mode => {
+            if (modeSections[mode]) {
+                modeSections[mode].classList.toggle('active', mode === selectedMode);
+            }
+        });
+    };
+    modeSelect.addEventListener('change', updateModeView);
+    modeSelect.addEventListener('change', () => {
+        if (resultPageInput) resultPageInput.value = '1';
+    });
+    listNameSelect.addEventListener('change', () => {
+        if (resultPageInput) resultPageInput.value = '1';
+    });
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', () => {
+            const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
+            if (currentPage <= 1) return;
+            resultPageInput.value = String(currentPage - 1);
+            runActiveSearch();
+        });
+    }
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', () => {
+            const currentPage = Math.max(1, parseInt(resultPageInput?.value, 10) || 1);
+            resultPageInput.value = String(currentPage + 1);
+            runActiveSearch();
+        });
+    }
+    updateModeView();
 
-    try {
-        for (let attempt = 0; ; attempt++) {
-            try {
-                const response = await fetch(url, options);
+    // --- 2. 動的フィールド管理：？文字指定しりとり (wildcardShiritori) ---
+    const wordPatternList = document.getElementById('wordPatternList');
+    const addPatternBtn = document.getElementById('addPatternBtn');
 
-                if (
-                    !RETRYABLE_STATUSES.has(response.status) ||
-                    attempt >= retries
-                ) {
-                    return response;
+    const wordPatternListWords =
+    document.getElementById('wordPatternListWords');
+
+const addPatternBtnWords =
+    document.getElementById('addPatternBtnWords');
+
+if (
+    addPatternBtnWords &&
+    wordPatternListWords
+) {
+    addPatternBtnWords.addEventListener(
+        'click',
+        () => {
+            const currentItems =
+                wordPatternListWords.querySelectorAll(
+                    '.pattern-item'
+                );
+
+            const div =
+                document.createElement('div');
+
+            div.className = 'pattern-item';
+
+            div.innerHTML = `
+                <span class="label">
+                    ${currentItems.length + 1}番目:
+                </span>
+                <input
+                    type="text"
+                    class="word-pattern-input-words"
+                    placeholder="例: ？？ン">
+            `;
+
+            wordPatternListWords.appendChild(div);
+        }
+    );
+}
+
+    if (addPatternBtn && wordPatternList) {
+        addPatternBtn.addEventListener('click', () => {
+            const currentItems = wordPatternList.querySelectorAll('.pattern-item');
+            const newDiv = document.createElement('div');
+            newDiv.className = 'pattern-item';
+            newDiv.style.marginTop = "8px";
+            newDiv.innerHTML = `
+                <span class="label">${currentItems.length + 1}番目:</span>
+                <input type="text" class="word-pattern-input" placeholder="例: ？？ン">
+                <button class="remove-pattern-btn" style="margin-left:5px;">-</button>
+            `;
+            wordPatternList.appendChild(newDiv);
+        });
+
+        wordPatternList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-pattern-btn')) {
+                e.target.closest('.pattern-item').remove();
+                // ラベル番号の振り直し
+                wordPatternList.querySelectorAll('.pattern-item').forEach((item, index) => {
+                    const label = item.querySelector('.label');
+                    if (label) label.textContent = `${index + 1}番目:`;
+                });
+            }
+        });
+    }
+
+    // --- 3. 動的フィールド管理：単語数指定しりとり (wordCountShiritori) ---
+    const wordCountInputsContainer = document.getElementById('wordCountInputs');
+    const addWordCountInputButton = document.getElementById('addWordCountInput');
+
+    if (addWordCountInputButton) {
+        addWordCountInputButton.addEventListener('click', () => {
+            const newGroup = document.createElement('div');
+            newGroup.className = 'word-count-input-group';
+            newGroup.innerHTML = `
+                <input type="text" class="word-count-input" value="3" placeholder="例: 3,4">
+                <button class="remove-word-count-input">-</button>
+            `;
+            wordCountInputsContainer.appendChild(newGroup);
+        });
+
+        wordCountInputsContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-word-count-input')) {
+                if (wordCountInputsContainer.querySelectorAll('.word-count-input-group').length > 1) {
+                    e.target.closest('.word-count-input-group').remove();
                 }
-            } catch (error) {
-                if (attempt >= retries) {
-                    throw error;
-                }
             }
+        });
+    }
 
-            showNotice(
-                `サーバーを起動しています。自動で再試行しています…（${attempt + 1}/${retries}）`
-            );
+    // 文字数入力の表示制御
+    const wordCountTypeSelect = document.getElementById('wordCountType');
+    const shiritoriTotalLengthInput = document.getElementById('shiritoriTotalLength');
 
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+    const updateWordCountNoneOption = () => {
+        if (!wordCountTypeSelect) return;
+        const noneOption = wordCountTypeSelect.querySelector('option[value="none"]');
+        const hasTotalLength = shiritoriTotalLengthInput?.value.trim() !== '';
+        if (noneOption) {
+            noneOption.disabled = !hasTotalLength;
         }
-    } finally {
-        clearTimeout(slowTimer);
+        if (!hasTotalLength && wordCountTypeSelect.value === 'none') {
+            wordCountTypeSelect.value = 'shortest';
+        }
+        const container = document.getElementById('wordCountInputContainer');
+        if (container) container.style.display = (wordCountTypeSelect.value === 'fixed') ? 'block' : 'none';
+    };
 
-        if (noticeShown) {
-            slowRequestCount = Math.max(0, slowRequestCount - 1);
+    if (wordCountTypeSelect) {
+        wordCountTypeSelect.addEventListener('change', () => {
+            updateWordCountNoneOption();
+        });
+    }
+    if (shiritoriTotalLengthInput) {
+        shiritoriTotalLengthInput.addEventListener('input', () => {
+            updateWordCountNoneOption();
+        });
+    }
+    updateWordCountNoneOption();
 
-            if (slowRequestCount === 0) {
-                hideServerNotice();
+    // --- 3.5 自動生成モード：条件モード切り替え ---
+    const conditionModeSelects = document.querySelectorAll('.condition-mode-select');
+
+    const updateAutoConditionRow = (select) => {
+        const row = select.closest('.auto-condition-group');
+        if (!row) return;
+        const container = row.querySelector('.condition-input-container');
+        const input = row.querySelector('.auto-condition-input');
+        if (!container || !input) return;
+
+        const mode = select.value;
+        if (mode === 'fixed') {
+            container.style.display = 'block';
+            input.disabled = false;
+            if (input.dataset.placeholderFixed) {
+                input.placeholder = input.dataset.placeholderFixed;
             }
-        }
-    }
-}
-
-// 処理中はボタンを無効にして、ラベルを切り替える
-async function withBusy(buttons, label, task) {
-    const list = [].concat(buttons).filter(Boolean);
-    const mainButton = list[0];
-    const originalLabel = mainButton ? mainButton.textContent : '';
-
-    list.forEach(button => { button.disabled = true; });
-
-    if (mainButton && label) {
-        mainButton.textContent = label;
-    }
-
-    try {
-        return await task();
-    } finally {
-        list.forEach(button => { button.disabled = false; });
-
-        if (mainButton) {
-            mainButton.textContent = originalLabel;
-        }
-    }
-}
-
-function runLogin() {
-    return withBusy(
-        [btnLoginSubmit, btnRegisterSubmit, btnGuestPlay],
-        'ログイン中…',
-        () => attemptLogin(inputNickname.value, inputPasscode.value)
-    );
-}
-
-function runRegister() {
-    return withBusy(
-        [btnRegisterSubmit, btnLoginSubmit, btnGuestPlay],
-        '登録中…',
-        () => attemptRegister(inputNickname.value, inputPasscode.value)
-    );
-}
-
-// ---------- トースト（画面の流れを止めない通知） ----------
-const TOAST_SUCCESS_PATTERN = /ログインしました|登録しました|クリアしました|完了しました/;
-const TOAST_ERROR_PATTERN = /失敗|できません|ありません|ませんでした|無効|正しくありません|エラー|必須|使用済み|見つかりません|入力してください|ログインしてください|が必要です|有効では/;
-
-function getToastContainer() {
-    let container = document.getElementById('toast-container');
-
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toast-container';
-        container.setAttribute('role', 'status');
-        container.setAttribute('aria-live', 'polite');
-        document.body.appendChild(container);
-    }
-
-    return container;
-}
-
-// type: 'success' | 'error' | 'info'（省略時はメッセージから判定）
-function showToast(message, type) {
-    const text = String(message);
-    const toastType = type || (
-        TOAST_SUCCESS_PATTERN.test(text) ? 'success'
-            : TOAST_ERROR_PATTERN.test(text) ? 'error'
-                : 'info'
-    );
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${toastType}`;
-    toast.textContent = text;
-
-    const container = getToastContainer();
-    container.appendChild(toast);
-
-    while (container.children.length > 3) {
-        container.firstChild.remove();
-    }
-
-    const removeToast = () => toast.remove();
-
-    toast.addEventListener('click', removeToast);
-    setTimeout(removeToast, toastType === 'error' ? 5000 : 3500);
-}
-
-// ---------- モーダル ----------
-// content: 要素、または close を受け取って要素を返す関数
-// 戻り値: 押されたボタンの value（Escキーなら cancelValue）
-function openModal({ title, message, content, buttons = [], cancelValue = null }) {
-    return new Promise(resolve => {
-        const previouslyFocused = document.activeElement;
-
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-
-        const dialog = document.createElement('div');
-        dialog.className = 'modal';
-        dialog.setAttribute('role', 'dialog');
-        dialog.setAttribute('aria-modal', 'true');
-
-        const close = (value) => {
-            document.removeEventListener('keydown', onKeyDown, true);
-            overlay.remove();
-
-            if (previouslyFocused && previouslyFocused.focus) {
-                previouslyFocused.focus();
+        } else if (mode === 'auto') {
+            container.style.display = 'block';
+            input.disabled = true;
+            if (!input.dataset.placeholderFixed) {
+                input.dataset.placeholderFixed = input.placeholder;
             }
+            input.placeholder = '自動で決定';
+            input.value = '';
+        } else {
+            container.style.display = 'none';
+            input.disabled = true;
+            input.value = '';
+        }
+    };
 
-            resolve(value);
+    conditionModeSelects.forEach(select => {
+        updateAutoConditionRow(select);
+        select.addEventListener('change', (e) => updateAutoConditionRow(e.target));
+    });
+
+    // --- 3.6 条件チャット ---
+    const chatInput = document.getElementById('conditionChatInput');
+    const chatApplyButton = document.getElementById('conditionChatApply');
+    const chatMessages = document.getElementById('chatMessages');
+    let chatAdvancedConditions = {};
+
+    const appendChatMessage = (message, type = 'assistant') => {
+        if (!chatMessages) return;
+        const div = document.createElement('div');
+        div.className = `chat-message ${type}`;
+        div.textContent = message;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    };
+
+    const normalizeChatText = (text) => text
+        .normalize('NFKC')
+        .replace(/[，､]/g, ',')
+        .replace(/[〜～]/g, '~')
+        .trim();
+
+    const parseJapaneseNumber = (value) => {
+        if (!value) return null;
+        const normalized = value.normalize('NFKC');
+        const numeric = parseInt(normalized, 10);
+        if (!Number.isNaN(numeric)) return numeric;
+
+        const digits = {
+            '零': 0, '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+            '五': 5, '六': 6, '七': 7, '八': 8, '九': 9
         };
 
-        const getFocusable = () => [...dialog.querySelectorAll('button:not(:disabled)')];
-
-        function onKeyDown(event) {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                close(cancelValue);
-                return;
-            }
-
-            if (event.key === 'Tab') {
-                const focusable = getFocusable();
-
-                if (focusable.length === 0) return;
-
-                const first = focusable[0];
-                const last = focusable[focusable.length - 1];
-
-                if (event.shiftKey && document.activeElement === first) {
-                    event.preventDefault();
-                    last.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                }
-            }
+        if (normalized === '十') return 10;
+        const tenIndex = normalized.indexOf('十');
+        if (tenIndex !== -1) {
+            const before = normalized.slice(0, tenIndex);
+            const after = normalized.slice(tenIndex + 1);
+            const tens = before ? digits[before] : 1;
+            const ones = after ? digits[after] : 0;
+            if (tens !== undefined && ones !== undefined) return tens * 10 + ones;
         }
 
-        if (title) {
-            const heading = document.createElement('h3');
-            heading.className = 'modal-title';
-            heading.textContent = title;
-            dialog.appendChild(heading);
-            dialog.setAttribute('aria-label', title);
-        }
-
-        if (message) {
-            const paragraph = document.createElement('p');
-            paragraph.className = 'modal-message';
-            paragraph.textContent = message;
-            dialog.appendChild(paragraph);
-        }
-
-        if (content) {
-            dialog.appendChild(
-                typeof content === 'function' ? content(close) : content
-            );
-        }
-
-        if (buttons.length > 0) {
-            const actions = document.createElement('div');
-            actions.className = 'modal-actions';
-
-            buttons.forEach(({ label, value, secondary, action }) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.textContent = label;
-                button.className = secondary ? 'secondary-btn' : 'modal-primary';
-                button.addEventListener('click', () => (action ? action() : close(value)));
-                actions.appendChild(button);
-            });
-
-            dialog.appendChild(actions);
-        }
-
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        document.addEventListener('keydown', onKeyDown, true);
-
-        const firstFocusable = getFocusable()[0];
-
-        if (firstFocusable) {
-            firstFocusable.focus();
-        }
-    });
-}
-
-function showConfirm(message, { okText = 'OK', cancelText = 'キャンセル' } = {}) {
-    return openModal({
-        message,
-        buttons: [
-            { label: okText, value: true },
-            { label: cancelText, value: false, secondary: true }
-        ],
-        cancelValue: false
-    });
-}
-
-// ---------- ワイルドカード「F」用のカタカナパレット ----------
-const KANA_PALETTE_ROWS = [
-    ['ア', 'イ', 'ウ', 'エ', 'オ'],
-    ['カ', 'キ', 'ク', 'ケ', 'コ'],
-    ['サ', 'シ', 'ス', 'セ', 'ソ'],
-    ['タ', 'チ', 'ツ', 'テ', 'ト'],
-    ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'],
-    ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
-    ['マ', 'ミ', 'ム', 'メ', 'モ'],
-    ['ヤ', '', 'ユ', '', 'ヨ'],
-    ['ラ', 'リ', 'ル', 'レ', 'ロ'],
-    ['ワ', 'ヲ', 'ン', 'ー', 'ッ'],
-    ['ガ', 'ギ', 'グ', 'ゲ', 'ゴ'],
-    ['ザ', 'ジ', 'ズ', 'ゼ', 'ゾ'],
-    ['ダ', 'ヂ', 'ヅ', 'デ', 'ド'],
-    ['バ', 'ビ', 'ブ', 'ベ', 'ボ'],
-    ['パ', 'ピ', 'プ', 'ペ', 'ポ'],
-    ['ャ', 'ュ', 'ョ', 'ヴ', ''],
-    ['ァ', 'ィ', 'ゥ', 'ェ', 'ォ']
-];
-
-// ポケモンモードだけで使える文字（isValidGameChar と同じ条件）
-const POKEMON_PALETTE_ROW = ['♂', '♀', 'Z', '2', '・'];
-
-// chars: 選択中の文字列（Fを含む）、targetIndex: 今決めるFの位置
-// 戻り値: 選ばれた1文字（キャンセルなら null）
-function askWildcardChar(chars, targetIndex, mode) {
-    const rows = [...KANA_PALETTE_ROWS];
-
-    if (mode === 'pokemon') {
-        rows.push(POKEMON_PALETTE_ROW);
-    }
-
-    return openModal({
-        title: `${targetIndex + 1}文字目（F）を何にしますか？`,
-        content: (close) => {
-            const wrapper = document.createElement('div');
-
-            const preview = document.createElement('div');
-            preview.className = 'wildcard-word';
-
-            chars.forEach((char, index) => {
-                const span = document.createElement('span');
-                span.textContent = index === targetIndex ? '？' : char;
-
-                if (index === targetIndex) {
-                    span.className = 'wildcard-target';
-                }
-
-                preview.appendChild(span);
-            });
-
-            const grid = document.createElement('div');
-            grid.className = 'palette-grid';
-
-            rows.flat().forEach(char => {
-                if (!char) {
-                    const spacer = document.createElement('span');
-                    spacer.className = 'palette-spacer';
-                    grid.appendChild(spacer);
-                    return;
-                }
-
-                if (!isValidGameChar(char, mode)) {
-                    return;
-                }
-
-                const key = document.createElement('button');
-                key.type = 'button';
-                key.className = 'palette-key';
-                key.textContent = char;
-                key.setAttribute('aria-label', char);
-                key.addEventListener('click', () => close(char));
-                grid.appendChild(key);
-            });
-
-            wrapper.appendChild(preview);
-            wrapper.appendChild(grid);
-
-            return wrapper;
-        },
-        buttons: [{ label: 'キャンセル', value: null, secondary: true }],
-        cancelValue: null
-    });
-}
-
-// ---------- クリア結果と「次の問題へ」 ----------
-// 現在の問題の次に挑戦できる未クリアの問題IDを返す（無ければ null）
-function findNextPuzzleId(mode, currentId) {
-    const puzzles = [...(allPuzzles[mode]?.puzzles || [])].sort(
-        (a, b) => Number(a.id) - Number(b.id)
-    );
-
-    const clearedIds = new Set(
-        [
-            ...(allPuzzles[mode]?.cleared_ids || []),
-            ...getClearedPuzzles(mode)
-        ].map(id => Number(id))
-    );
-
-    // 今クリアした問題は、通信の反映前でもクリア済みとして扱う
-    clearedIds.add(Number(currentId));
-
-    const isUnsolved = puzzle => !clearedIds.has(Number(puzzle.id));
-
-    const next =
-        puzzles.find(p => Number(p.id) > Number(currentId) && isUnsolved(p)) ||
-        puzzles.find(isUnsolved);
-
-    return next ? Number(next.id) : null;
-}
-
-// 戻り値: 'next' | 'list' | 'home'
-function showClearResult(modeName, clearedCount, hasNext, shareText) {
-    const buttons = [];
-
-    if (hasNext) {
-        buttons.push({ label: '次の問題へ', value: 'next' });
-    }
-
-    if (shareText) {
-        buttons.push({
-            label: '結果をシェアする',
-            secondary: true,
-            action: () => shareResult(shareText)
-        });
-    }
-
-    buttons.push(
-        { label: '問題一覧へ', value: 'list', secondary: true },
-        { label: 'ホームへ', value: 'home', secondary: true }
-    );
-
-    return openModal({
-        title: '🎉 クリア！',
-        message:
-            `全ての文字を消去しました！\n` +
-            `あなたの${modeName}クリア数は${clearedCount}問になりました。` +
-            (hasNext ? '' : '\n挑戦できる未クリアの問題はもうありません。'),
-        buttons,
-        cancelValue: 'home'
-    });
-}
-
-// ---------- 1手戻す ----------
-let moveHistory = [];
-
-function updateUndoButton() {
-    const button = document.getElementById('undo-button');
-
-    if (button) {
-        button.disabled = moveHistory.length === 0;
-    }
-}
-
-function resetMoveHistory() {
-    moveHistory = [];
-    updateUndoButton();
-}
-
-function undoLastMove() {
-    const last = moveHistory.pop();
-
-    if (!last) return;
-
-    boardData = last.board;
-    usedWords = last.usedWords;
-    selectedCells = [];
-    eraseButton.disabled = true;
-
-    renderBoard(5);
-    updateStatusDisplay();
-    updateUndoButton();
-}
-
-// ---------- SNSシェア ----------
-async function shareResult(text) {
-    const url = `${location.origin}/`;
-
-    // スマホなどは端末の共有メニューを使う
-    if (navigator.share) {
-        try {
-            await navigator.share({ text, url });
-            return;
-        } catch (error) {
-            if (error && error.name === 'AbortError') {
-                return;
-            }
-        }
-    }
-
-    const intentUrl =
-        'https://twitter.com/intent/tweet' +
-        `?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
-
-    const opened = window.open(intentUrl, '_blank', 'noopener,noreferrer');
-
-    if (!opened) {
-        try {
-            await navigator.clipboard.writeText(`${text} ${url}`);
-            showToast('シェア用の文章をコピーしました。', 'success');
-        } catch {
-            showToast('シェア画面を開けませんでした。', 'error');
-        }
-    }
-}
-
-// ---------- ランキング: 自分の順位の固定表示 ----------
-let rankingRequestCounter = 0;
-
-async function updateMyRank(type, requestId) {
-    const element = document.getElementById('ranking-my-rank');
-
-    if (!element) return;
-
-    if (!isLoggedIn()) {
-        element.hidden = false;
-        element.textContent = 'ログインすると、あなたの順位がここに固定表示されます。';
-        return;
-    }
-
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/rankings/${encodeURIComponent(type)}/me`,
-            {
-                credentials: 'same-origin',
-                headers: { Accept: 'application/json' }
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error('順位の取得に失敗しました。');
-        }
-
-        const data = await response.json();
-
-        if (requestId !== rankingRequestCounter) return;
-
-        element.hidden = false;
-        element.textContent =
-            `あなたの順位: ${Number(data.rank)}位 / ${Number(data.total)}人中` +
-            `（クリア数 ${Number(data.score)}問）`;
-    } catch {
-        if (requestId === rankingRequestCounter) {
-            element.hidden = true;
-        }
-    }
-}
-
-// ---------- 作問画面: 自動移動・矢印キー・貼り付け ----------
-const CREATE_COLUMNS = 5;
-
-function getCreateInputs() {
-    return [...document.querySelectorAll('.create-input')];
-}
-
-// 1文字入力できたら、次のマスへ移動する
-function advanceCreateFocus(input) {
-    if (document.activeElement !== input || input.value.length !== 1) {
-        return;
-    }
-
-    const inputs = getCreateInputs();
-    const next = inputs[inputs.indexOf(input) + 1];
-
-    if (next) {
-        next.focus();
-    }
-}
-
-function handleCreateInputKeydown(event) {
-    if (event.isComposing) return;
-
-    const inputs = getCreateInputs();
-    const index = inputs.indexOf(event.target);
-
-    if (index < 0) return;
-
-    let nextIndex = null;
-
-    if (event.key === 'ArrowLeft') nextIndex = index - 1;
-    else if (event.key === 'ArrowRight') nextIndex = index + 1;
-    else if (event.key === 'ArrowUp') nextIndex = index - CREATE_COLUMNS;
-    else if (event.key === 'ArrowDown') nextIndex = index + CREATE_COLUMNS;
-    else if (event.key === 'Backspace' && event.target.value === '') nextIndex = index - 1;
-
-    if (nextIndex === null) return;
-
-    event.preventDefault();
-
-    if (inputs[nextIndex]) {
-        inputs[nextIndex].focus();
-    }
-}
-
-// 貼り付け: 1行なら現在のマスから順に、複数行なら1行を1段として入力する
-// （空白・全角空白・_・□ は空きマスとして扱う）
-function handleCreatePaste(event) {
-    const text = (event.clipboardData || window.clipboardData)?.getData('text') || '';
-
-    if (!text) return;
-
-    event.preventDefault();
-
-    const inputs = getCreateInputs();
-    const startIndex = inputs.indexOf(event.target);
-
-    if (startIndex < 0) return;
-
-    const mode = getCreationMode();
-    const startColumn = startIndex % CREATE_COLUMNS;
-    const startRow = Math.floor(startIndex / CREATE_COLUMNS);
-    let skipped = 0;
-    let lastWritten = startIndex;
-
-    const writeCell = (index, rawChar) => {
-        if (index < 0 || index >= inputs.length) return false;
-
-        lastWritten = index;
-
-        if (/[\s\u3000_□]/u.test(rawChar)) {
-            inputs[index].value = '';
-            return true;
-        }
-
-        const char = toKatakana(rawChar.normalize('NFKC')).toUpperCase();
-
-        if (isValidGameChar(char, mode)) {
-            inputs[index].value = char;
-        } else {
-            skipped++;
-        }
-
-        return true;
+        return digits[normalized] ?? null;
     };
 
-    const lines = text
-        .replace(/\r/g, '')
-        .split('\n')
-        .filter((line, i, all) => !(line === '' && i === all.length - 1));
+    const toCharList = (value) => {
+        if (!value) return [];
+        return value
+            .replace(/[、\s]+/g, ',')
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean);
+    };
 
-    if (lines.length > 1) {
-        lines.forEach((line, lineIndex) => {
-            const row = startRow + lineIndex;
-            const firstColumn = lineIndex === 0 ? startColumn : 0;
-
-            [...line].slice(0, CREATE_COLUMNS - firstColumn).forEach((char, i) => {
-                writeCell(row * CREATE_COLUMNS + firstColumn + i, char);
-            });
-        });
-    } else {
-        [...lines[0]].forEach((char, i) => {
-            writeCell(startIndex + i, char);
-        });
-    }
-
-    checkCreationInput();
-
-    const nextInput = inputs[Math.min(lastWritten + 1, inputs.length - 1)];
-
-    if (nextInput) {
-        nextInput.focus();
-    }
-
-    if (skipped > 0) {
-        showToast(`使えない文字を${skipped}個スキップしました。`, 'info');
-    }
-}
-
-// ---------- 初回だけの短いチュートリアル ----------
-const TUTORIAL_STORAGE_KEY = 'keshimasu_tutorial_seen_v1';
-let tutorialScheduled = false;
-
-const TUTORIAL_STEPS = [
-    {
-        title: '文字をつなげて選ぶ',
-        message:
-            '盤面の文字を、縦か横に一直線になるように順番に選びます。\n' +
-            '例：「ア」「メ」「リ」「カ」と選ぶと「アメリカ」になります。'
-    },
-    {
-        title: 'ワードになったら消す',
-        message:
-            '国名・首都名・ポケモン名になったら「消去する」を押します。\n' +
-            '消えた文字の上にあった文字は下に落ちます。\n' +
-            '「F」は、好きな文字の代わりに使えるワイルドカードです。'
-    },
-    {
-        title: '全部消せばクリア',
-        message:
-            '同じワードは1回しか使えません。\n' +
-            'まちがえたら「1手戻す」か「リセット」。\n' +
-            '盤面の文字をすべて消したらクリアです！'
-    }
-];
-
-function hasSeenTutorial() {
-    try {
-        return localStorage.getItem(TUTORIAL_STORAGE_KEY) === '1';
-    } catch {
-        return false;
-    }
-}
-
-function markTutorialSeen() {
-    try {
-        localStorage.setItem(TUTORIAL_STORAGE_KEY, '1');
-    } catch {
-        // 保存できなくても、遊ぶことには影響しない
-    }
-}
-
-async function showTutorial() {
-    for (let i = 0; i < TUTORIAL_STEPS.length; i++) {
-        const step = TUTORIAL_STEPS[i];
-        const isLast = i === TUTORIAL_STEPS.length - 1;
-
-        const choice = await openModal({
-            title: `遊び方 ${i + 1}/${TUTORIAL_STEPS.length}　${step.title}`,
-            message: step.message,
-            buttons: [
-                { label: isLast ? 'はじめる' : 'つぎへ', value: 'next' },
-                ...(isLast ? [] : [{ label: 'スキップ', value: 'skip', secondary: true }])
-            ],
-            cancelValue: 'skip'
-        });
-
-        if (choice === 'skip') break;
-    }
-
-    markTutorialSeen();
-}
-
-// ホーム画面を初めて開いたときだけ表示する
-function scheduleTutorial() {
-    if (tutorialScheduled || hasSeenTutorial()) return;
-
-    tutorialScheduled = true;
-    setTimeout(showTutorial, 400);
-}
-
-const btnTutorial = document.getElementById('btn-tutorial');
-
-if (btnTutorial) {
-    btnTutorial.addEventListener('click', showTutorial);
-}
-
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-}
-
-function toKatakana(str) {
-    return str.replace(/[\u3041-\u3096]/g, function (match) {
-        const chr = match.charCodeAt(0) + 0x60;
-        return String.fromCharCode(chr);
-    });
-}
-
-// ポケモンモードのみで使える文字
-// ニドラン♂、ニドラン♀、ポリゴンZ、ポリゴン2、「・」を含む名前等に対応
-const POKEMON_ONLY_CHARS = ['♂', '♀', 'Z', '2', '・'];
-
-// mode: 'country' | 'capital' | 'pokemon'
-// ※サーバー(server.js)の isValidBoardCharacter と同じ条件にしておくこと
-function isValidGameChar(char, mode) {
-    if (char === 'F') return true;
-
-    if (POKEMON_ONLY_CHARS.includes(char)) {
-        return mode === 'pokemon';
-    }
-
-    // カタカナ1文字
-    return /^[\u30a0-\u30ff]$/.test(char);
-}
-
-
-function getModeName(mode) {
-    if (mode === 'country') return '国名ケシマス';
-    if (mode === 'capital') return '首都名ケシマス';
-    if (mode === 'pokemon') return 'ポケモンケシマス';
-    return 'ケシマス';
-}
-
-function getShortModeName(mode) {
-    if (mode === 'country') return '国名';
-    if (mode === 'capital') return '首都名';
-    if (mode === 'pokemon') return 'ポケモン';
-    return '問題';
-}
-
-function getDictionarySetByMode(mode) {
-    return DICT_SETS[mode] || new Set();
-}
-
-function getDictionaryByMode(mode) {
-    if (mode === 'country') return COUNTRY_DICT;
-    if (mode === 'capital') return CAPITAL_DICT;
-    if (mode === 'pokemon') return POKEMON_DICT;
-    return [];
-}
-
-function isValidMode(mode) {
-    return ['country', 'capital', 'pokemon'].includes(mode);
-}
-
-// ----------------------------------------------------
-// LocalStorageによるクリア状態管理
-// ----------------------------------------------------
-function getClearedPuzzles(mode) {
-    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
-    const cleared = localStorage.getItem(key);
-
-    try {
-        return cleared ? JSON.parse(cleared) : [];
-    } catch (error) {
-        console.warn('クリア済みIDの読み込みに失敗しました:', error);
-        return [];
-    }
-}
-
-function markPuzzleAsCleared(mode, puzzleId) {
-    const key = `cleared_puzzles_${mode}_id_${currentPlayerId || 'guest'}`;
-    const numericPuzzleId = Number(puzzleId);
-
-    let cleared = getClearedPuzzles(mode).map(id => Number(id));
-
-    if (!cleared.includes(numericPuzzleId)) {
-        cleared.push(numericPuzzleId);
-        localStorage.setItem(key, JSON.stringify(cleared));
-    }
-}
-
-// ----------------------------------------------------
-// サーバー連携・プレイヤー認証
-// ----------------------------------------------------
-// 辞書は内容が変わらないので、一度取得したら再取得しない
-async function loadDictionariesOnce() {
-    const alreadyLoaded =
-        COUNTRY_DICT.length > 0 &&
-        CAPITAL_DICT.length > 0 &&
-        POKEMON_DICT.length > 0;
-
-    if (alreadyLoaded) {
-        return;
-    }
-
-    const responses = await Promise.all(
-        ['country', 'capital', 'pokemon'].map(mode =>
-            fetchWithRetry(
-                `${API_BASE_URL}/words/${mode}`,
-                {
-                    credentials: 'same-origin'
-                }
-            )
-        )
-    );
-
-    if (responses.some(response => !response.ok)) {
-        throw new Error('辞書リストの取得に失敗しました。');
-    }
-
-    const [country, capital, pokemon] = await Promise.all(
-        responses.map(response => response.json())
-    );
-
-    COUNTRY_DICT = country;
-    CAPITAL_DICT = capital;
-    POKEMON_DICT = pokemon;
-
-    // 判定用のSetを作る（includes の線形探索をやめる）
-    DICT_SETS.country = new Set(country);
-    DICT_SETS.capital = new Set(capital);
-    DICT_SETS.pokemon = new Set(pokemon);
-}
-
-async function loadPuzzlesAndWords() {
-    const modeList = [
-        'country',
-        'capital',
-        'pokemon'
-    ];
-
-    try {
-        const puzzleResults = await Promise.all(
-            modeList.map(async mode => {
-                const response = await fetchWithRetry(
-                    `${API_BASE_URL}/puzzles/${mode}`,
-                    {
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json'
-                        }
-                    }
-                );
-
-                if (!response.ok) {
-                    throw new Error(
-                        `${mode}問題リストの取得に失敗しました。`
-                    );
-                }
-
-                return {
-                    mode,
-                    data: await response.json()
-                };
-            })
-        );
-
-        for (const { mode, data } of puzzleResults) {
-            allPuzzles[mode] = data;
-
-            if (
-                data.player_identified &&
-                currentPlayerId
-            ) {
-                localStorage.setItem(
-                    `cleared_puzzles_${mode}_id_${currentPlayerId}`,
-                    JSON.stringify(
-                        data.cleared_ids || []
-                    )
-                );
+    const getMatch = (text, patterns, groupIndex = 1) => {
+        for (const pattern of patterns) {
+            const match = text.match(pattern);
+            if (match?.[groupIndex]) {
+                return match[groupIndex].trim();
             }
         }
+        return null;
+    };
 
-        await loadDictionariesOnce();
-
-        updateHomeProblemCount();
-    } catch (error) {
-        console.error(
-            '問題または辞書の読み込みに失敗しました。',
-            {
-                name: error.name
+    const parseNumberRule = (text, patterns) => {
+        for (const { pattern, mode = 'exact' } of patterns) {
+            const match = text.match(pattern);
+            if (match?.[1]) {
+                const value = parseJapaneseNumber(match[1]);
+                if (value !== null) return { mode, value };
             }
-        );
+        }
+        return null;
+    };
 
-        showToast(
-            '問題データを読み込めませんでした。時間を空けて再試行してください。'
-        );
+    const parseAdvancedConditions = (text) => {
+        const advanced = {};
+
+        const dakutenCount = parseNumberRule(text, [
+            { pattern: /濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?以上/, mode: 'min' },
+            { pattern: /濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?以下/, mode: 'max' },
+            { pattern: /濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
+            { pattern: /濁点(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
+        ]);
+        if (dakutenCount) advanced.dakutenCount = dakutenCount;
+
+        const handakutenCount = parseNumberRule(text, [
+            { pattern: /半濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?以上/, mode: 'min' },
+            { pattern: /半濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?以下/, mode: 'max' },
+            { pattern: /半濁音(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
+            { pattern: /半濁点(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
+        ]);
+        if (handakutenCount) advanced.handakutenCount = handakutenCount;
+
+        const smallKanaCount = parseNumberRule(text, [
+            { pattern: /(?:小さい文字|小書き文字|拗音|促音)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ },
+            { pattern: /[「\"]?[ァィゥェォッャュョヮぁぃぅぇぉっゃゅょゎ][」\"]?などの小さい文字(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|文字|つ)?/ }
+        ]);
+        if (smallKanaCount) advanced.smallKanaCount = smallKanaCount;
+
+        const repeatedCharWordCount = parseNumberRule(text, [
+            { pattern: /(?:同じ文字|重複文字).*(?:国名|単語)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|語|つ)?/ },
+            { pattern: /(?:文字を複数回使っている|文字が重複している)(?:国名|単語)(?:数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|語|つ)?/ }
+        ]);
+        if (repeatedCharWordCount) advanced.repeatedCharWordCount = repeatedCharWordCount;
+
+        if (/(?:前|前に|最初の(?:国名|単語)の前).*(?:続けられる|つなげられる).*(?:なし|ない|不可|無)/.test(text)) {
+            advanced.hasPrecedingWord = false;
+        } else if (/(?:前|前に|最初の(?:国名|単語)の前).*(?:続けられる|つなげられる).*(?:あり|ある|可|有)/.test(text)) {
+            advanced.hasPrecedingWord = true;
+        }
+
+        if (/(?:後|後に|最後の(?:国名|単語)の後).*(?:続けられる|つなげられる).*(?:なし|ない|不可|無)/.test(text)) {
+            advanced.hasSucceedingWord = false;
+        } else if (/(?:後|後に|最後の(?:国名|単語)の後).*(?:続けられる|つなげられる).*(?:あり|ある|可|有)/.test(text)) {
+            advanced.hasSucceedingWord = true;
+        }
+
+        if (/単調増加|狭義増加|文字数.*増加/.test(text)) {
+            advanced.lengthPattern = 'increasing';
+        } else if (/広義増加|非減少/.test(text)) {
+            advanced.lengthPattern = 'nondecreasing';
+        } else if (/単調減少|狭義減少|文字数.*減少/.test(text)) {
+            advanced.lengthPattern = 'decreasing';
+        } else if (/広義減少|非増加/.test(text)) {
+            advanced.lengthPattern = 'nonincreasing';
+        } else if (/等差数列|等差/.test(text)) {
+            advanced.lengthPattern = 'arithmetic';
+        } else if (/等比数列|等比/.test(text)) {
+            advanced.lengthPattern = 'geometric';
+        }
+
+        if (/高度条件.*(?:解除|クリア)|条件.*(?:解除|クリア)|リセット/.test(text)) {
+            advanced.clear = true;
+        }
+
+        return advanced;
+    };
+
+    const parseConditionChat = (rawText) => {
+        const text = normalizeChatText(rawText);
+        const parsed = {};
+
+        const modeKeywords = [
+            ['autoGenerate', /自動生成/],
+            ['wildcardShiritori', /[?？]文字指定|ワイルドカード.*しりとり/],
+            ['wordCountShiritori', /単語数指定/],
+            ['loop', /ループ/],
+            ['chain', /チェーン/],
+            ['wildcard', /単語検索.*[?？]|[?？].*単語検索/],
+            ['substring', /部分一致/],
+            ['shiritori', /文字指定|しりとり/]
+        ];
+        const modeKeyword = modeKeywords.find(([, pattern]) => pattern.test(text));
+        if (modeKeyword) parsed.mode = modeKeyword[0];
+
+        parsed.firstChar = getMatch(text, [
+            /(?:開始|始まり|最初|先頭)(?:文字)?(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z])/,
+            /([ァ-ンーぁ-んA-Za-z])\s*(?:から|で始)/
+        ]);
+
+        parsed.lastChar = getMatch(text, [
+            /(?:終了|終わり|最後|末尾)(?:文字)?(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z])/,
+            /([ァ-ンーぁ-んA-Za-z])\s*(?:まで|で終)/
+        ]);
+
+        const wordCountValue = getMatch(text, [
+            /([0-9一二三四五六七八九十]+)\s*(?:語|単語)/,
+            /(?:単語数|語数)(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)/
+        ]);
+        parsed.wordCount = parseJapaneseNumber(wordCountValue);
+
+        const totalLengthValue = getMatch(text, [
+            /(?:合計|総)(?:文字数)?(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*文字?/,
+            /([0-9一二三四五六七八九十]+)\s*文字(?:ちょうど|合計|で)?/
+        ]);
+        parsed.totalLength = parseJapaneseNumber(totalLengthValue);
+
+        const minMaxMatch = text.match(/([0-9一二三四五六七八九十]+)\s*(?:~|-|から)\s*([0-9一二三四五六七八九十]+)\s*(?:個|件|解)?/);
+        if (minMaxMatch) {
+            parsed.minSolutions = parseJapaneseNumber(minMaxMatch[1]);
+            parsed.maxSolutions = parseJapaneseNumber(minMaxMatch[2]);
+        } else {
+            const maxValue = getMatch(text, [/(?:最大|上限)(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|件|解)?/]);
+            const minValue = getMatch(text, [/(?:最小|下限)(?:は|を|:|：)?\s*([0-9一二三四五六七八九十]+)\s*(?:個|件|解)?/]);
+            parsed.maxSolutions = parseJapaneseNumber(maxValue);
+            parsed.minSolutions = parseJapaneseNumber(minValue);
+        }
+
+        const includeValue = getMatch(text, [
+            /(?:含める|必須|入れる)(?:文字)?(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z,、\s]+)/,
+            /([ァ-ンーぁ-んA-Za-z,、\s]+?)\s*(?:を|は)?\s*(?:含める|必須|入れる)/
+        ]);
+        const excludeValue = getMatch(text, [
+            /(?:除外|使わない|抜く|なし)(?:文字)?(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z,、\s]+)/,
+            /([ァ-ンーぁ-んA-Za-z,、\s]+?)\s*(?:を|は)?\s*(?:除外|使わない|抜く|なし)/
+        ]);
+        parsed.includeChars = toCharList(includeValue);
+        parsed.excludeChars = toCharList(excludeValue);
+
+        const patternValue = getMatch(text, [
+            /(?:パターン|形)(?:は|を|:|：)?\s*([ァ-ンーぁ-んA-Za-z?？]+)/,
+            /([ァ-ンーぁ-んA-Za-z?？]*[?？][ァ-ンーぁ-んA-Za-z?？]*)/
+        ]);
+        if (patternValue) parsed.pattern = patternValue;
+
+        if (/最短/.test(text)) parsed.wordCountType = 'shortest';
+        if (/文字数.*(?:異なる|一意|ばらばら)|異なる文字数/.test(text)) parsed.uniqueWordLengths = true;
+        if (/自動.*開始|開始.*自動/.test(text)) parsed.firstCharMode = 'auto';
+        if (/自動.*終了|終了.*自動/.test(text)) parsed.lastCharMode = 'auto';
+        if (/自動.*単語数|単語数.*自動/.test(text)) parsed.wordCountMode = 'auto';
+        if (/自動.*合計|合計.*自動/.test(text)) parsed.totalLengthMode = 'auto';
+        parsed.advancedConditions = parseAdvancedConditions(text);
+
+        return parsed;
+    };
+
+    const describeNumberRule = (label, rule) => {
+        if (!rule) return null;
+        const suffix = rule.mode === 'min' ? '以上' : rule.mode === 'max' ? '以下' : '';
+        return `${label}: ${rule.value}${suffix}`;
+    };
+
+    const lengthPatternLabels = {
+        increasing: '単調増加',
+        nondecreasing: '広義増加',
+        decreasing: '単調減少',
+        nonincreasing: '広義減少',
+        arithmetic: '等差数列',
+        geometric: '等比数列'
+    };
+
+    const buildAdvancedSummary = (advanced) => {
+        if (!advanced || Object.keys(advanced).length === 0) return [];
+        if (advanced.clear) return ['高度条件: 解除'];
+
+        return [
+            describeNumberRule('濁音数', advanced.dakutenCount),
+            describeNumberRule('半濁音数', advanced.handakutenCount),
+            describeNumberRule('小さい文字数', advanced.smallKanaCount),
+            describeNumberRule('重複文字あり単語数', advanced.repeatedCharWordCount),
+            advanced.hasPrecedingWord === undefined ? null : `前に続けられる単語: ${advanced.hasPrecedingWord ? 'あり' : 'なし'}`,
+            advanced.hasSucceedingWord === undefined ? null : `後に続けられる単語: ${advanced.hasSucceedingWord ? 'あり' : 'なし'}`,
+            advanced.lengthPattern ? `文字数列: ${lengthPatternLabels[advanced.lengthPattern] || advanced.lengthPattern}` : null
+        ].filter(Boolean);
+    };
+
+    const buildConditionSummary = (parsed) => {
+        const labels = [];
+        if (parsed.mode) labels.push(`モード: ${modeSelect.options[modeSelect.selectedIndex]?.text || parsed.mode}`);
+        if (parsed.firstChar) labels.push(`開始文字: ${parsed.firstChar}`);
+        if (parsed.lastChar) labels.push(`終了文字: ${parsed.lastChar}`);
+        if (parsed.wordCount) labels.push(`単語数: ${parsed.wordCount}`);
+        if (parsed.wordCountType === 'shortest') labels.push('単語数: 最短');
+        if (parsed.wordCountType === 'none') labels.push('単語数: 指定しない');
+        if (parsed.totalLength) labels.push(`合計文字数: ${parsed.totalLength}`);
+        if (parsed.includeChars?.length) labels.push(`含める文字: ${parsed.includeChars.join(', ')}`);
+        if (parsed.excludeChars?.length) labels.push(`除外文字: ${parsed.excludeChars.join(', ')}`);
+        if (parsed.minSolutions) labels.push(`最小解数: ${parsed.minSolutions}`);
+        if (parsed.maxSolutions) labels.push(`最大解数: ${parsed.maxSolutions}`);
+        if (parsed.pattern) labels.push(`パターン: ${parsed.pattern}`);
+        if (parsed.uniqueWordLengths) labels.push('文字数一意: ON');
+        if (parsed.firstCharMode === 'auto') labels.push('開始文字: 自動');
+        if (parsed.lastCharMode === 'auto') labels.push('終了文字: 自動');
+        if (parsed.wordCountMode === 'auto') labels.push('単語数: 自動');
+        if (parsed.totalLengthMode === 'auto') labels.push('合計文字数: 自動');
+        labels.push(...buildAdvancedSummary(parsed.advancedConditions));
+        return labels;
+    };
+
+    const setAutoCondition = (conditionName, value, mode = 'fixed') => {
+        const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
+        const input = document.getElementById(`auto${conditionName.charAt(0).toUpperCase()}${conditionName.slice(1)}`);
+        if (select) {
+            select.value = mode;
+            updateAutoConditionRow(select);
+        }
+        if (input && mode === 'fixed' && value !== undefined && value !== null) {
+            input.value = value;
+        }
+    };
+
+    const applyConditionsToCurrentMode = (parsed) => {
+        if (parsed.advancedConditions?.clear) {
+            chatAdvancedConditions = {};
+            clearAdvancedConditionsFields();
+        } else if (parsed.advancedConditions && Object.keys(parsed.advancedConditions).length > 0) {
+            chatAdvancedConditions = {
+                ...chatAdvancedConditions,
+                ...parsed.advancedConditions
+            };
+            setAdvancedConditionsFields(parsed.advancedConditions);
+        }
+
+        if (parsed.mode && modeSections[parsed.mode]) {
+            modeSelect.value = parsed.mode;
+            updateModeView();
+        }
+
+        const currentMode = modeSelect.value;
+
+        if (currentMode === 'autoGenerate') {
+            if (parsed.minSolutions) setVal('autoMinSolutions', parsed.minSolutions);
+            if (parsed.maxSolutions) setVal('autoMaxSolutions', parsed.maxSolutions);
+            if (parsed.firstCharMode === 'auto') setAutoCondition('firstChar', null, 'auto');
+            else if (parsed.firstChar) setAutoCondition('firstChar', parsed.firstChar, 'fixed');
+            if (parsed.lastCharMode === 'auto') setAutoCondition('lastChar', null, 'auto');
+            else if (parsed.lastChar) setAutoCondition('lastChar', parsed.lastChar, 'fixed');
+            if (parsed.wordCountMode === 'auto') setAutoCondition('wordCount', null, 'auto');
+            else if (parsed.wordCount) setAutoCondition('wordCount', parsed.wordCount, 'fixed');
+            if (parsed.totalLengthMode === 'auto') setAutoCondition('totalLength', null, 'auto');
+            else if (parsed.totalLength) setAutoCondition('totalLength', parsed.totalLength, 'fixed');
+            if (parsed.includeChars?.length) setAutoCondition('includeChars', parsed.includeChars.join(','), 'fixed');
+            if (parsed.excludeChars?.length) setAutoCondition('excludeChars', parsed.excludeChars.join(','), 'fixed');
+            if (parsed.uniqueWordLengths) setChecked('autoUniqueWordLengths', true);
+            return;
+        }
+
+        if (currentMode === 'shiritori') {
+            if (parsed.firstChar) setVal('firstChar', parsed.firstChar);
+            if (parsed.lastChar) setVal('lastChar', parsed.lastChar);
+            const container = document.getElementById('wordCountInputContainer');
+            if (parsed.wordCountType === 'shortest') {
+                setVal('wordCountType', 'shortest');
+                if (container) container.style.display = 'none';
+            } else if (parsed.wordCountType === 'none') {
+                setVal('wordCountType', 'none');
+                if (container) container.style.display = 'none';
+            } else if (parsed.wordCount) {
+                setVal('wordCountType', 'fixed');
+                setVal('wordCount', parsed.wordCount);
+                if (container) container.style.display = 'block';
+            }
+            if (parsed.totalLength) setVal('shiritoriTotalLength', parsed.totalLength);
+            if (parsed.includeChars?.length) setVal('includeChars', parsed.includeChars.join(','));
+            if (parsed.excludeChars?.length) setVal('excludeChars', parsed.excludeChars.join(','));
+            if (parsed.uniqueWordLengths) setChecked('uniqueWordLengths', true);
+            return;
+        }
+
+        if (currentMode === 'chain') {
+            if (parsed.pattern) setVal('chainPattern', parsed.pattern);
+            if (parsed.includeChars?.length) setVal('chainRequiredChars', parsed.includeChars.join(','));
+            if (parsed.excludeChars?.length) setVal('chainExcludeChars', parsed.excludeChars.join(','));
+            return;
+        }
+
+        if (currentMode === 'loop' && parsed.pattern) {
+            setVal('loopPattern', parsed.pattern);
+            if (parsed.totalLength) setVal('loopTotalLength', parsed.totalLength);
+            return;
+        }
+
+        if (currentMode === 'wordCountShiritori' && parsed.totalLength) {
+            setVal('wordCountTotalLength', parsed.totalLength);
+        }
+    };
+
+    const handleConditionChat = () => {
+        if (!chatInput) return;
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        appendChatMessage(text, 'user');
+        const parsed = parseConditionChat(text);
+
+        if (buildConditionSummary(parsed).length === 0) {
+            appendChatMessage('読み取れる条件がありませんでした。', 'error');
+            return;
+        }
+
+        applyConditionsToCurrentMode(parsed);
+        const summary = buildConditionSummary(parsed);
+        appendChatMessage(`反映しました: ${summary.join(' / ')}`);
+        chatInput.value = '';
+    };
+
+    if (chatApplyButton) {
+        chatApplyButton.addEventListener('click', handleConditionChat);
     }
-}
-async function getCurrentPlayer() {
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/player/me`,
-            {
-                method: 'GET',
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json'
-                }
+    if (chatInput) {
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleConditionChat();
             }
-        );
+        });
+    }
 
-        if (response.status === 401) {
+    const parseAdvancedConditionRule = (modeId, valueId) => {
+        const mode = document.getElementById(modeId)?.value;
+        const value = document.getElementById(valueId)?.value;
+        const numeric = parseInt(value, 10);
+        if (!mode || mode === '' || Number.isNaN(numeric)) {
+            return null;
+        }
+        return { mode, value: numeric };
+    };
+
+    const getExplicitAdvancedConditions = () => {
+        const advanced = {};
+        const dakuten = parseAdvancedConditionRule('dakutenCountMode', 'dakutenCountValue');
+        if (dakuten) advanced.dakutenCount = dakuten;
+
+        const handakuten = parseAdvancedConditionRule('handakutenCountMode', 'handakutenCountValue');
+        if (handakuten) advanced.handakutenCount = handakuten;
+
+        const smallKana = parseAdvancedConditionRule('smallKanaCountMode', 'smallKanaCountValue');
+        if (smallKana) advanced.smallKanaCount = smallKana;
+
+        const repeated = parseAdvancedConditionRule('repeatedCharWordCountMode', 'repeatedCharWordCountValue');
+        if (repeated) advanced.repeatedCharWordCount = repeated;
+
+        const preceding = document.getElementById('hasPrecedingWord')?.value;
+        if (preceding === 'true') advanced.hasPrecedingWord = true;
+        if (preceding === 'false') advanced.hasPrecedingWord = false;
+
+        const succeeding = document.getElementById('hasSucceedingWord')?.value;
+        if (succeeding === 'true') advanced.hasSucceedingWord = true;
+        if (succeeding === 'false') advanced.hasSucceedingWord = false;
+
+        const pattern = document.getElementById('lengthPattern')?.value;
+        if (pattern) advanced.lengthPattern = pattern;
+
+        return advanced;
+    };
+
+    const clearAdvancedConditionsFields = () => {
+        setVal('dakutenCountMode', '');
+        setVal('dakutenCountValue', '');
+        setVal('handakutenCountMode', '');
+        setVal('handakutenCountValue', '');
+        setVal('smallKanaCountMode', '');
+        setVal('smallKanaCountValue', '');
+        setVal('repeatedCharWordCountMode', '');
+        setVal('repeatedCharWordCountValue', '');
+        setVal('hasPrecedingWord', '');
+        setVal('hasSucceedingWord', '');
+        setVal('lengthPattern', '');
+    };
+
+    const setAdvancedConditionsFields = (advanced) => {
+        if (!advanced) return;
+        if (advanced.clear) {
+            clearAdvancedConditionsFields();
+            return;
+        }
+
+        if (advanced.dakutenCount) {
+            setVal('dakutenCountMode', advanced.dakutenCount.mode);
+            setVal('dakutenCountValue', advanced.dakutenCount.value);
+        }
+        if (advanced.handakutenCount) {
+            setVal('handakutenCountMode', advanced.handakutenCount.mode);
+            setVal('handakutenCountValue', advanced.handakutenCount.value);
+        }
+        if (advanced.smallKanaCount) {
+            setVal('smallKanaCountMode', advanced.smallKanaCount.mode);
+            setVal('smallKanaCountValue', advanced.smallKanaCount.value);
+        }
+        if (advanced.repeatedCharWordCount) {
+            setVal('repeatedCharWordCountMode', advanced.repeatedCharWordCount.mode);
+            setVal('repeatedCharWordCountValue', advanced.repeatedCharWordCount.value);
+        }
+        if (advanced.hasPrecedingWord !== undefined) {
+            setVal('hasPrecedingWord', String(advanced.hasPrecedingWord));
+        }
+        if (advanced.hasSucceedingWord !== undefined) {
+            setVal('hasSucceedingWord', String(advanced.hasSucceedingWord));
+        }
+        if (advanced.lengthPattern) {
+            setVal('lengthPattern', advanced.lengthPattern);
+        }
+    };
+
+    const getAdvancedConditionsForRequest = () => {
+        const explicit = getExplicitAdvancedConditions();
+        const explicitKeys = Object.keys(explicit);
+        const chatKeys = Object.keys(chatAdvancedConditions || {});
+
+        if (chatKeys.length === 0 && explicitKeys.length === 0) {
             return null;
         }
 
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-            throw new Error(
-                data?.message ||
-                'プレイヤー情報を取得できませんでした。'
-            );
+        if (chatKeys.length === 0) {
+            return explicit;
         }
 
-        if (!data?.player) {
-            throw new Error(
-                'プレイヤー情報の形式が正しくありません。'
-            );
+        if (explicitKeys.length === 0) {
+            return { ...chatAdvancedConditions };
         }
 
-        setPlayerSession(data.player);
-
-        const player = data.player;
-
-        if (Array.isArray(player.cleared_country_ids)) {
-            localStorage.setItem(
-                `cleared_puzzles_country_id_${currentPlayerId}`,
-                JSON.stringify(player.cleared_country_ids)
-            );
-        }
-
-        if (Array.isArray(player.cleared_capital_ids)) {
-            localStorage.setItem(
-                `cleared_puzzles_capital_id_${currentPlayerId}`,
-                JSON.stringify(player.cleared_capital_ids)
-            );
-        }
-
-        if (Array.isArray(player.cleared_pokemon_ids)) {
-            localStorage.setItem(
-                `cleared_puzzles_pokemon_id_${currentPlayerId}`,
-                JSON.stringify(player.cleared_pokemon_ids)
-            );
-        }
-
-        return player;
-    } catch (error) {
-        console.error(
-            'プレイヤー情報の取得に失敗しました。',
-            {
-                name: error.name
-            }
-        );
-
-        return null;
-    }
-}
-
-function setPlayerSession(playerData) {
-    if (!playerData || !playerData.id || !playerData.nickname) {
-        throw new Error('プレイヤー情報の形式が正しくありません。');
-    }
-
-    currentPlayerNickname = String(playerData.nickname);
-    isGuestPlayer = false;
-    currentPlayerId = Number(playerData.id);
-
-    playerStats.country_clears =
-        Number(playerData.country_clears) || 0;
-
-    playerStats.capital_clears =
-        Number(playerData.capital_clears) || 0;
-
-    playerStats.pokemon_clears =
-        Number(playerData.pokemon_clears) || 0;
-}
-
-// ログイン済みかどうか（サーバーのセッションに対応したプレイヤーIDがあるか）
-function isLoggedIn() {
-    return currentPlayerId !== null && !isGuestPlayer;
-}
-
-function clearLocalPlayerState() {
-    currentPlayerId = null;
-    currentPlayerNickname = null;
-    isGuestPlayer = false;
-
-    playerStats = {
-        country_clears: 0,
-        capital_clears: 0,
-        pokemon_clears: 0
+        return { ...chatAdvancedConditions, ...explicit };
     };
 
-    // 旧バージョンで保存された認証関連データも削除
-    localStorage.removeItem('player_id');
-    localStorage.removeItem('keshimasu_nickname');
-
-    if (inputNickname) {
-        inputNickname.value = '';
-    }
-
-    if (inputPasscode) {
-        inputPasscode.value = '';
-    }
-
-    if (welcomeMessage) {
-        welcomeMessage.textContent = '';
-    }
-}
-
-async function attemptLogin(nickname, passcode) {
-    const finalName =
-        typeof nickname === 'string'
-            ? nickname.trim()
-            : '';
-
-    if (!finalName || typeof passcode !== 'string' || !passcode) {
-        showToast(
-            'ニックネームとパスコードの両方を入力してください。'
-        );
-
-        return false;
-    }
-
-    if ([...finalName].length > 20) {
-        showToast('ニックネームは20文字以内で入力してください。');
-        return false;
-    }
-
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/player/login`,
-            {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json'
-                },
-                body: JSON.stringify({
-                    nickname: finalName,
-                    passcode
-                })
-            }
-        );
-
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-            showToast(
-                data?.message ||
-                'ログインに失敗しました。'
-            );
-
-            inputPasscode.value = '';
-            return false;
-        }
-
-        if (!data?.player) {
-            showToast('プレイヤー情報を取得できませんでした。');
-            return false;
-        }
-
-        setPlayerSession(data.player);
-        inputPasscode.value = '';
-
-        await loadPuzzlesAndWords();
-
-        showToast(
-            `${currentPlayerNickname}さん、ログインしました。`
-        );
-
-        showScreen('home');
-        return true;
-    } catch (error) {
-        console.error(
-            'ログイン処理に失敗しました。',
-            {
-                name: error.name
-            }
-        );
-
-        showToast(
-            'ネットワークエラーによりログインできませんでした。'
-        );
-
-        return false;
-    }
-}
-async function attemptRegister(nickname, passcode) {
-    const finalName =
-        typeof nickname === 'string'
-            ? nickname.trim()
-            : '';
-
-    if (!finalName || typeof passcode !== 'string' || !passcode) {
-        showToast(
-            'ニックネームとパスコードの両方を入力してください。'
-        );
-
-        return false;
-    }
-
-    if ([...finalName].length > 20) {
-        showToast('ニックネームは20文字以内で入力してください。');
-        return false;
-    }
-
-    if (passcode.length < 8 || passcode.length > 72) {
-        showToast(
-            'パスコードは8文字以上72文字以内で入力してください。'
-        );
-
-        return false;
-    }
-
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/player/register`,
-            {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json'
-                },
-                body: JSON.stringify({
-                    nickname: finalName,
-                    passcode
-                })
-            }
-        );
-
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-            showToast(
-                data?.message ||
-                '新規登録に失敗しました。'
-            );
-
-            inputPasscode.value = '';
-            return false;
-        }
-
-        if (!data?.player) {
-            showToast('プレイヤー情報を取得できませんでした。');
-            return false;
-        }
-
-        setPlayerSession(data.player);
-        inputPasscode.value = '';
-
-        await loadPuzzlesAndWords();
-
-        showToast(
-            `${currentPlayerNickname}さん、新規登録しました。`
-        );
-
-        showScreen('home');
-        return true;
-    } catch (error) {
-        console.error(
-            '新規登録処理に失敗しました。',
-            {
-                name: error.name
-            }
-        );
-
-        showToast(
-            'ネットワークエラーにより新規登録できませんでした。'
-        );
-
-        return false;
-    }
-}
-
-async function setupPlayer() {
-    currentPlayerId = null;
-    currentPlayerNickname = null;
-
-    playerStats = {
-        country_clears: 0,
-        capital_clears: 0,
-        pokemon_clears: 0
+    const handleClearAdvancedConditions = () => {
+        chatAdvancedConditions = {};
+        clearAdvancedConditionsFields();
     };
 
-    try {
-        const player = await getCurrentPlayer();
-
-        if (player) {
-            await loadPuzzlesAndWords();
-            showScreen('home');
-            return;
-        }
-    } catch (error) {
-        console.error(
-            'ログイン状態の確認に失敗しました。',
-            {
-                name: error.name
-            }
-        );
+    const clearAdvancedButton = document.getElementById('clearAdvancedConditionsBtn');
+    if (clearAdvancedButton) {
+        clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
     }
 
-    await loadPuzzlesAndWords();
-    showScreen('auth');
-}
+    // --- 4. 検索実行メインロジック ---
+    searchButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            resultsDiv.innerHTML = '<p class="loading-message">検索中...</p>';
+            const mode = modeSelect.value;
+            const commonListName = listNameSelect.value; // 共通リスト名を取得
+            
+            let apiPath = '';
+            let requestBody = {};
 
-// ----------------------------------------------------
-// 2. 画面表示と初期化
-// ----------------------------------------------------
-function showScreen(screenName) {
-    Object.keys(screens).forEach(key => {
-        if (screens[key]) {
-            screens[key].style.display = (key === screenName) ? 'block' : 'none';
-        }
-    });
+            try {
+                if (mode === 'shiritori') {
+                    apiPath = '/api/shiritori';
+                    const includeStr = getVal('includeChars');
+                    const totalLengthVal = getVal('shiritoriTotalLength');
+                    requestBody = {
+                        listName: commonListName,
+                        firstChar: getVal('firstChar').trim() || null,
+                        lastChar: getVal('lastChar').trim() || null,
+                        wordCount: getVal('wordCountType') === 'fixed'
+                            ? parseInt(getVal('wordCount'), 10)
+                            : getVal('wordCountType') === 'shortest'
+                                ? 'shortest'
+                                : null,
+                        requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
+                        excludeChars: getVal('excludeChars').trim(),
+                        outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
+                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
+                        uniqueWordLengths: getChecked('uniqueWordLengths'),
+                        uniquePairOnly: getChecked('globalUniquePairOnly'),
+                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
+                        advancedConditions: getAdvancedConditionsForRequest()
+                    };
+                } else if (mode === 'wildcardShiritori') {
+                    apiPath = '/api/wildcard_shiritori';
 
-    if (screenName === 'home') {
-        appTitleElement.style.display = 'block';
-        updateHomeProblemCount();
-        scheduleTutorial();
+                    const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
+                        .map(input => input.value.trim())
+                        .filter(val => val !== "");
 
-        if (isLoggedIn() && currentPlayerNickname) {
-            welcomeMessage.textContent = `${currentPlayerNickname}さん、ようこそ！`;
-        } else if (isGuestPlayer) {
-            welcomeMessage.textContent = 'ゲストとしてプレイ中です（スコアは保存されません）';
-        } else {
-            welcomeMessage.textContent = '';
-        }
-    } else {
-        appTitleElement.style.display = 'none';
-    }
-}
+                    const totalLengthVal = getVal('wildcardTotalLength');
 
-function updateHomeProblemCount() {
-    const countryCount = allPuzzles.country.puzzles ? allPuzzles.country.puzzles.length : 0;
-    const capitalCount = allPuzzles.capital.puzzles ? allPuzzles.capital.puzzles.length : 0;
-    const pokemonCount = allPuzzles.pokemon.puzzles ? allPuzzles.pokemon.puzzles.length : 0;
+                    requestBody = {
+    listName: commonListName,
+    wordPatterns: patterns,
+    requiredChars: null,
+    requiredCharMode: 'atLeast',
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
 
-    const clearedCountryCount = playerStats.country_clears || 0;
-    const clearedCapitalCount = playerStats.capital_clears || 0;
-    const clearedPokemonCount = playerStats.pokemon_clears || 0;
+                } else if (mode === 'wordCountShiritori') {
+                    apiPath = '/api/word_count_shiritori';
+                    const patterns = Array.from(document.querySelectorAll('.word-count-input'))
+                                          .map(input => input.value.trim())
+                                          .filter(val => val !== '')
+                                          .map(val => val.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)));
+                    const totalLengthVal = getVal('wordCountTotalLength');
+                    requestBody = {
+    listName: commonListName,
+    wordCountPatterns: patterns,
+    allowPermutation: getChecked('allowWordCountPermutation'),
+    uniqueWordLengths: getChecked('uniqueWordLengthsWordCount'),
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
+                } else if (mode === 'loop') {
+                    apiPath = '/api/loop_shiritori';
+                    const totalLengthVal = getVal('loopTotalLength');
+                    requestBody = {
+    listName: commonListName,
+    pattern: getVal('loopPattern').trim(),
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
 
-    const countryCountElement = document.getElementById('country-problem-count');
-    const capitalCountElement = document.getElementById('capital-problem-count');
-    const pokemonCountElement = document.getElementById('pokemon-problem-count');
+                } else if (mode === 'chain') {
+    apiPath = '/api/chain_shiritori';
 
-    if (countryCountElement) {
-        countryCountElement.textContent =
-            `問題数: ${countryCount}問 (クリア済: ${clearedCountryCount})`;
-    }
+    const patternVal = getVal('chainPattern').trim();
+    const requiredStr = getVal('chainRequiredChars');
+    const excludeStr = getVal('chainExcludeChars');
+    const totalLengthVal = getVal('chainTotalLength');
 
-    if (capitalCountElement) {
-        capitalCountElement.textContent =
-            `問題数: ${capitalCount}問 (クリア済: ${clearedCapitalCount})`;
-    }
-
-    if (pokemonCountElement) {
-        pokemonCountElement.textContent =
-            `問題数: ${pokemonCount}問 (クリア済: ${clearedPokemonCount})`;
-    }
-}
-
-// ----------------------------------------------------
-// 問題一覧
-// ----------------------------------------------------
-function showPuzzleListByMode(mode) {
-    if (!isValidMode(mode)) {
-        showToast('無効なモードです。');
+    if (!patternVal) {
+        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
         return;
     }
 
-    const modeName = getModeName(mode);
-
-    currentListMode = mode;
-
-    const puzzles = allPuzzles[mode].puzzles || [];
-    const serverClearedIds = allPuzzles[mode].cleared_ids || [];
-    const localClearedIds = getClearedPuzzles(mode);
-
-    const clearedIds = new Set(
-        [...serverClearedIds, ...localClearedIds].map(id => Number(id))
-    );
-
-    document.getElementById('puzzle-list-title').textContent = `${modeName} 問題一覧`;
-
-    const container = document.getElementById('puzzle-list-container');
-
-    if (puzzles.length === 0) {
-        container.innerHTML = `
-            <div class="puzzle-list-empty">
-                問題がまだ登録されていません。
-            </div>
-        `;
-        showScreen('puzzleList');
-        return;
-    }
-
-    const sortedPuzzles = [...puzzles].sort((a, b) => Number(a.id) - Number(b.id));
-
-    let html = '';
-
-    sortedPuzzles.forEach((puzzle, index) => {
-    const puzzleId = Number(puzzle.id);
-    const isCleared = clearedIds.has(puzzleId);
-
-    const creator = escapeHtml(
-        puzzle.creator || '不明'
-    );
-
-    const clearCount = Number(
-        puzzle.clear_count ??
-        puzzle.clearCount ??
-        puzzle.cleared_count ??
-        0
-    ) || 0;
-
-    html += `
-            <div class="puzzle-card ${isCleared ? 'cleared' : 'uncleared'}">
-                <div class="puzzle-card-header">
-                    <div class="puzzle-number">第 ${index + 1} 問</div>
-                    <div class="puzzle-status ${isCleared ? 'cleared' : 'uncleared'}">
-                        ${isCleared ? 'クリア済' : '未クリア'}
-                    </div>
-                </div>
-
-                <div class="puzzle-meta">
-                    <div class="puzzle-meta-label">製作者</div>
-                    <div class="puzzle-meta-value">${creator}</div>
-
-                    <div class="puzzle-meta-label">クリア者数</div>
-                    <div class="puzzle-meta-value puzzle-clear-count">${clearCount}人</div>
-                </div>
-
-                <button class="puzzle-challenge-btn" onclick="startPuzzleById('${mode}', ${puzzleId})">
-                    ${isCleared ? 'もう一度挑戦する' : 'この問題に挑戦する'}
-                </button>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-    showScreen('puzzleList');
-}
-
-// 既存互換用
-function showPuzzleList(isCountry) {
-    showPuzzleListByMode(isCountry ? 'country' : 'capital');
-}
-
-function startPuzzleById(mode, puzzleId) {
-    if (!isValidMode(mode)) {
-        showToast('無効なモードです。');
-        showScreen('home');
-        return;
-    }
-
-    const allProblemData = [
-    ...(allPuzzles[mode].puzzles || [])
-].sort(
-    (a, b) => Number(a.id) - Number(b.id)
-);
-    const selectedPuzzle = allProblemData.find(
-        puzzle => Number(puzzle.id) === Number(puzzleId)
-    );
-
-    if (!selectedPuzzle) {
-        showToast('選択された問題が見つかりませんでした。');
-        showScreen('home');
-        return;
-    }
-
-    currentMode = mode;
-    isCountryMode = mode === 'country';
-    isCreationPlay = false;
-    currentDictionary = getDictionarySetByMode(mode);
-
-    currentPuzzleIndex = allProblemData.findIndex(
-        p => Number(p.id) === Number(selectedPuzzle.id)
-    );
-
-    currentPuzzleId = Number(selectedPuzzle.id);
-
-    // 浮いている文字がある盤面は、開始時に下へ落とす
-    initialPlayData = dropBoardLetters(selectedPuzzle.data);
-    boardData = JSON.parse(JSON.stringify(initialPlayData));
-
-    selectedCells = [];
-    usedWords = [];
-    resetMoveHistory();
-    eraseButton.disabled = true;
-
-    document.getElementById('current-game-title').textContent = getModeName(mode);
-    document.getElementById('problem-number-display').textContent = `第 ${currentPuzzleIndex + 1} 問`;
-
-    const creatorName = selectedPuzzle.creator || '不明';
-    document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
-
-    updateStatusDisplay();
-    renderBoard(5);
-    showScreen('mainGame');
-}
-
-// ----------------------------------------------------
-// ゲーム開始
-// ----------------------------------------------------
-function startGameByMode(mode, isCreation) {
-    if (!isValidMode(mode)) {
-        showToast('無効なモードです。');
-        return;
-    }
-
-    const allProblemData = [
-    ...(allPuzzles[mode].puzzles || [])
-].sort(
-    (a, b) => Number(a.id) - Number(b.id)
-);
-    currentMode = mode;
-    isCountryMode = mode === 'country';
-    isCreationPlay = isCreation;
-    currentDictionary = getDictionarySetByMode(mode);
-
-    if (!isCreation) {
-        const serverClearedIds = allPuzzles[mode].cleared_ids || [];
-        const localClearedIds = getClearedPuzzles(mode);
-        const clearedIds = new Set(
-            [...serverClearedIds, ...localClearedIds].map(id => Number(id))
-        );
-
-        const availablePuzzles = allProblemData.filter(
-            puzzle => !clearedIds.has(Number(puzzle.id))
-        );
-
-        if (availablePuzzles.length === 0) {
-            showToast(`🎉 ${getModeName(mode)}のすべての問題をクリアしました！`);
-            showScreen('home');
-            return;
-        }
-
-        const selectedPuzzle = availablePuzzles[0];
-
-        currentPuzzleIndex = allProblemData.findIndex(
-            p => Number(p.id) === Number(selectedPuzzle.id)
-        );
-
-        currentPuzzleId = Number(selectedPuzzle.id);
-
-        // 浮いている文字がある盤面は、開始時に下へ落とす
-        initialPlayData = dropBoardLetters(selectedPuzzle.data);
-        boardData = JSON.parse(JSON.stringify(initialPlayData));
-
-        const nextProblemNumber = (playerStats[`${mode}_clears`] || 0) + 1;
-        document.getElementById('problem-number-display').textContent = `第 ${nextProblemNumber} 問`;
-
-    } else {
-        currentPuzzleIndex = -1;
-        currentPuzzleId = null;
-        document.getElementById('problem-number-display').textContent = '問題制作モード';
-    }
-
-    selectedCells = [];
-    usedWords = [];
-    resetMoveHistory();
-    eraseButton.disabled = true;
-
-    document.getElementById('current-game-title').textContent = getModeName(mode);
-
-    let creatorName = '銀の焼き鳥';
-
-    if (isCreation) {
-        creatorName = currentPlayerNickname;
-    } else if (currentPuzzleIndex !== -1) {
-        creatorName = allProblemData[currentPuzzleIndex].creator || '不明';
-    }
-
-    document.getElementById('creator-display').textContent = `制作者: ${creatorName}`;
-
-    updateStatusDisplay();
-    renderBoard(5);
-    showScreen('mainGame');
-}
-
-// 既存互換用
-function startGame(isCountry, isCreation) {
-    startGameByMode(isCountry ? 'country' : 'capital', isCreation);
-}
-
-// ----------------------------------------------------
-// 盤面描画
-// ----------------------------------------------------
-function renderBoard(visibleRows) {
-    // 再描画でフォーカスが外れないよう、フォーカス中のセルを覚えておく
-    const active = document.activeElement;
-    const hadFocus =
-        active &&
-        boardElement.contains(active) &&
-        active.dataset.r !== undefined;
-    const focusR = hadFocus ? active.dataset.r : null;
-    const focusC = hadFocus ? active.dataset.c : null;
-
-    boardElement.innerHTML = '';
-    boardElement.setAttribute('role', 'group');
-    boardElement.setAttribute('aria-label', '盤面');
-
-    const startRow = boardData.length - visibleRows;
-
-    for (let r = startRow; r < boardData.length; r++) {
-        for (let c = 0; c < boardData[r].length; c++) {
-            const char = boardData[r][c];
-            const order = selectedCells.findIndex(
-                coord => coord[0] === r && coord[1] === c
-            );
-
-            let cell;
-
-            if (char === '') {
-                // 空きマスは読み上げ・操作の対象にしない
-                cell = document.createElement('div');
-                cell.className = 'cell empty';
-                cell.setAttribute('aria-hidden', 'true');
-            } else {
-                // キーボード操作・読み上げに対応するため button にする
-                cell = document.createElement('button');
-                cell.type = 'button';
-                cell.className = 'cell';
-                cell.setAttribute(
-                    'aria-label',
-                    `${char}、${r - startRow + 1}行目${c + 1}列目`
-                );
-                cell.setAttribute('aria-pressed', order > -1 ? 'true' : 'false');
-                cell.addEventListener('click', handleCellClick);
-            }
-
-            cell.dataset.r = r;
-            cell.dataset.c = c;
-            cell.textContent = char;
-
-            if (order > -1) {
-                cell.classList.add('selected');
-                // 色だけに頼らず、選んだ順番を数字で表示する
-                cell.dataset.order = String(order + 1);
-            }
-
-            boardElement.appendChild(cell);
-        }
-    }
-
-    if (hadFocus) {
-        const next = boardElement.querySelector(
-            `button.cell[data-r="${focusR}"][data-c="${focusC}"]`
-        );
-
-        if (next) {
-            next.focus();
-        }
-    }
-
-    updateSelectedWordDisplay();
-}
-
-// 選択中の文字列を表示する（スクリーンリーダーにも読み上げられる）
-function updateSelectedWordDisplay() {
-    const element = document.getElementById('selected-word-display');
-
-    if (!element) return;
-
-    if (selectedCells.length === 0) {
-        element.textContent = '選択中: なし';
-        return;
-    }
-
-    const firstRow = selectedCells[0][0];
-    const isHorizontal = selectedCells.every(coord => coord[0] === firstRow);
-    const sorted = [...selectedCells].sort((a, b) =>
-        isHorizontal ? a[1] - b[1] : a[0] - b[0]
-    );
-
-    element.textContent =
-        `選択中: ${sorted.map(([r, c]) => boardData[r][c]).join('')}`;
-}
-
-// 矢印キーでセル間を移動、Escで選択解除
-boardElement.addEventListener('keydown', (event) => {
-    const target = event.target;
-
-    if (!(target instanceof HTMLElement) || target.dataset.r === undefined) {
-        return;
-    }
-
-    if (event.key === 'Escape') {
-        selectedCells = [];
-        eraseButton.disabled = true;
-        renderBoard(5);
-        return;
-    }
-
-    const delta = {
-        ArrowUp: [-1, 0],
-        ArrowDown: [1, 0],
-        ArrowLeft: [0, -1],
-        ArrowRight: [0, 1]
-    }[event.key];
-
-    if (!delta) return;
-
-    event.preventDefault();
-
-    let r = Number(target.dataset.r);
-    let c = Number(target.dataset.c);
-
-    // 空きマスは飛ばして、その方向の次の文字セルへ移動する
-    for (;;) {
-        r += delta[0];
-        c += delta[1];
-
-        if (r < 0 || r >= boardData.length || c < 0 || c >= (boardData[0] || []).length) {
-            return;
-        }
-
-        const next = boardElement.querySelector(
-            `button.cell[data-r="${r}"][data-c="${c}"]`
-        );
-
-        if (next) {
-            next.focus();
-            return;
-        }
-    }
-});
-
-function updateStatusDisplay() {
-    document.getElementById('used-words-display').textContent =
-        usedWords.join(', ') || 'なし';
-}
-
-// ----------------------------------------------------
-// スコア更新・問題登録・クリア判定
-// ----------------------------------------------------
-async function updatePlayerScore(mode, puzzleId) {
-    if (
-        !isLoggedIn() ||
-        isCreationPlay
-    ) {
-        return false;
-    }
-
-    if (!isValidMode(mode)) {
-        return false;
-    }
-
-    const numericPuzzleId = Number(puzzleId);
-
-    if (
-        !Number.isSafeInteger(numericPuzzleId) ||
-        numericPuzzleId <= 0
-    ) {
-        return false;
-    }
-
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/score/update`,
-            {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json'
-                },
-                body: JSON.stringify({
-                    mode,
-                    puzzleId: numericPuzzleId
-                })
-            }
-        );
-
-        const data = await response.json().catch(() => null);
-
-        if (response.status === 401) {
-             clearLocalPlayerState();
-
-            showToast(
-                'ログインの有効期限が切れました。再度ログインしてください。'
-            );
-
-            showScreen('auth');
-            return false;
-        }
-
-        if (!response.ok) {
-            throw new Error(
-                data?.message ||
-                'スコアを更新できませんでした。'
-            );
-        }
-
-        playerStats[`${mode}_clears`] =
-            Number(data.newScore) || 0;
-
-        return true;
-    } catch (error) {
-        console.error(
-            'スコア更新に失敗しました。',
-            {
-                name: error.name
-            }
-        );
-
-        return false;
-    }
-}
-
-async function submitNewPuzzle(mode, newBoardData) {
-    if (
-        !isLoggedIn() ||
-        !currentPlayerNickname
-    ) {
-        showToast('問題を登録するにはログインが必要です。');
-        showScreen('auth');
-        return false;
-    }
-
-    if (!isValidMode(mode)) {
-        showToast('無効なモードです。');
-        return false;
-    }
-
-    if (
-        !Array.isArray(newBoardData) ||
-        newBoardData.length !== 8 ||
-        !newBoardData.every(
-            row =>
-                Array.isArray(row) &&
-                row.length === 5 &&
-                row.every(
-                    cell =>
-                        typeof cell === 'string' &&
-                        [...cell].length <= 1
-                )
+    requestBody = {
+    listName: commonListName,
+    pattern: patternVal,
+    requiredChars: requiredStr
+        ? requiredStr.split(',').map(c => c.trim()).filter(Boolean)
+        : null,
+    excludeChars: excludeStr
+        ? excludeStr.split(',').map(c => c.trim()).filter(Boolean)
+        : null,
+    requiredCharMode:
+        getChecked('chainRequiredCharExactly')
+            ? 'exactly'
+            : 'atLeast',
+    uniquePairOnly: getChecked('globalUniquePairOnly'),
+    totalLength: totalLengthVal
+        ? parseInt(totalLengthVal, 10)
+        : null,
+    advancedConditions: getAdvancedConditionsForRequest()
+};
+} else if (mode === 'autoGenerate') {
+                    apiPath = '/api/auto_generate';
+                    
+                    // 条件の取得と構築
+                    const getConditionMode = (conditionName) => {
+                        const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
+                        return select ? select.value : 'none';
+                    };
+
+                    const getConditionValue = (conditionName) => {
+                        const select = document.querySelector(`.condition-mode-select[data-condition="${conditionName}"]`);
+                        if (!select || select.value !== 'fixed') {
+                            return null;
+                        }
+                        const input = document.getElementById(`auto${conditionName.charAt(0).toUpperCase()}${conditionName.slice(1)}`);
+                        return input ? input.value.trim() || null : null;
+                    };
+
+                    const minSolutions = parseInt(getVal('autoMinSolutions'), 10) || 5;
+                    const maxSolutions = parseInt(getVal('autoMaxSolutions'), 10) || 20;
+
+                    requestBody = {
+                        listName: commonListName,
+                        minSolutions: minSolutions,
+                        maxSolutions: maxSolutions,
+                        
+                        firstCharMode: getConditionMode('firstChar'),
+                        firstChar: getConditionValue('firstChar'),
+                        
+                        lastCharMode: getConditionMode('lastChar'),
+                        lastChar: getConditionValue('lastChar'),
+                        
+                        wordCountMode: getConditionMode('wordCount'),
+                        wordCount: getConditionValue('wordCount') ? parseInt(getConditionValue('wordCount'), 10) : null,
+                        
+                        includeCharsMode: getConditionMode('includeChars'),
+                        includeChars: getConditionValue('includeChars') ? getConditionValue('includeChars').split(',').map(c => c.trim()).filter(c => c) : null,
+                        
+                        excludeCharsMode: getConditionMode('excludeChars'),
+                        excludeChars: getConditionValue('excludeChars') ? getConditionValue('excludeChars').split(',').map(c => c.trim()).filter(c => c) : null,
+                        
+                        totalLengthMode: getConditionMode('totalLength'),
+                        totalLength: getConditionValue('totalLength') ? parseInt(getConditionValue('totalLength'), 10) : null,
+                        
+                        uniqueWordLengths: getChecked('autoUniqueWordLengths'),
+                        advancedConditions: getAdvancedConditionsForRequest()
+                    };
+                    
+                    
+
+                }else if (mode === 'wildcardWords') {
+
+    apiPath = '/api/wildcard_words';
+
+    const patterns =
+        Array.from(
+            document.querySelectorAll(
+                '.word-pattern-input-words'
+            )
         )
-    ) {
-        showToast('盤面データの形式が正しくありません。');
-        return false;
-    }
+        .map(input => input.value.trim())
+        .filter(Boolean);
 
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/puzzles`,
-            {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json'
-                },
-                body: JSON.stringify({
-                    mode,
-                    boardData: newBoardData
-                })
-            }
-        );
-
-        const data = await response.json().catch(() => null);
-
-        if (response.status === 401) {
-            clearLocalPlayerState();
-
-            showToast(
-                'ログインの有効期限が切れました。再度ログインしてください。'
-            );
-
-            showScreen('auth');
-            return false;
-        }
-
-        if (!response.ok) {
-            showToast(
-                data?.message ||
-                '問題を登録できませんでした。'
-            );
-
-            return false;
-        }
-
-        const creatorName =
-            data?.puzzle?.creator || currentPlayerNickname;
-
-        showToast(
-            `問題を登録しました。\n` +
-            `制作者: ${creatorName}\n` +
-            'この問題は今後、標準問題として出題されます。'
-        );
-
-        await loadPuzzlesAndWords();
-        return true;
-    } catch (error) {
-        console.error('問題登録に失敗しました。', {
-            name: error.name
-        });
-
-        showToast(
-            'ネットワークエラーにより問題を登録できませんでした。'
-        );
-
-        return false;
-    }
+    requestBody = {
+    listName: commonListName,
+    wordPatterns: patterns,
+    uniquePairOnly: getChecked('globalUniquePairOnly')
+};
 }
+                
+                else if (mode === 'wildcard') {
+                    apiPath = '/api/wildcard_search';
+                    requestBody = { listName: commonListName, searchText: getVal('wildcardText').trim() };
 
-async function checkGameStatus() {
-    const totalChars = boardData.flat().filter(char => char !== '').length;
-
-    if (totalChars !== 0) {
-        return;
-    }
-
-    const mode = currentMode;
-    const modeName = getShortModeName(mode);
-
-    if (!isCreationPlay) {
-        // 盤面の内容ではなく、プレイ開始時に保持した問題IDでクリアを記録する
-        if (currentPuzzleId) {
-            markPuzzleAsCleared(mode, currentPuzzleId);
-
-            if (currentPlayerId) {
-                await updatePlayerScore(mode, currentPuzzleId);
-            } else {
-                playerStats[`${mode}_clears`] = (playerStats[`${mode}_clears`] || 0) + 1;
-            }
-        }
-
-        const clearedPuzzleId = currentPuzzleId;
-        const latestClearedCount = playerStats[`${mode}_clears`] || 0;
-
-        const problemLabel = document
-            .getElementById('problem-number-display')
-            .textContent.trim();
-
-        const shareText =
-            `「${getModeName(mode)}」${problemLabel}をクリアしました！` +
-            `（${modeName}クリア数: ${latestClearedCount}問） #国名ケシマス`;
-
-        // 最新のクリア状況を取り直してから、次の問題を探す
-        await loadPuzzlesAndWords();
-
-        const nextPuzzleId = findNextPuzzleId(mode, clearedPuzzleId);
-
-        const choice = await showClearResult(
-            modeName,
-            latestClearedCount,
-            nextPuzzleId !== null,
-            shareText
-        );
-
-        if (choice === 'next' && nextPuzzleId !== null) {
-            startPuzzleById(mode, nextPuzzleId);
-        } else if (choice === 'list') {
-            showPuzzleListByMode(mode);
-        } else {
-            showScreen('home');
-        }
-    } else {
-        const registrationConfirmed = await showConfirm('🎉 作成した問題をクリアしました！\nこの問題を標準問題として登録しますか？', { okText: '登録する', cancelText: '登録しない' });
-
-        if (registrationConfirmed) {
-            const finalBoard = JSON.parse(JSON.stringify(initialPlayData));
-            const registered = await submitNewPuzzle(
-    mode,
-    finalBoard
-);
-
-if (registered) {
-    showScreen('home');
-}
-        } else {
-            showToast('問題の登録をスキップしました。作成画面に戻ります。');
-
-            showScreen('create');
-            renderCreateBoard();
-
-            // 判定モードを先に戻してから盤面を復元する
-            // （順序が逆だと、ポケモン専用文字が「使えない文字」として消えてしまう）
-            const creationModeSelect = document.getElementById('creation-mode-select');
-            if (creationModeSelect) {
-                creationModeSelect.value = mode;
-            }
-
-            fillCreateBoard(initialPlayData);
-        }
-    }
-}
-
-// ----------------------------------------------------
-// 3. ゲームロジックの中核
-// ----------------------------------------------------
-// 空マスの上に浮いた文字を下へ落とした新しい盤面を返す（元の盤面は変更しない）
-// ※サーバー(server.js)の dropBoardLetters と同じ処理にしておくこと
-function dropBoardLetters(board) {
-    const rowCount = board.length;
-    const result = board.map(row => [...row]);
-    const columnCount = rowCount > 0 ? board[0].length : 0;
-
-    for (let c = 0; c < columnCount; c++) {
-        const letters = [];
-
-        for (let r = rowCount - 1; r >= 0; r--) {
-            if (board[r][c] !== '') {
-                letters.push(board[r][c]);
-            }
-        }
-
-        for (let r = rowCount - 1; r >= 0; r--) {
-            result[r][c] = letters[rowCount - 1 - r] ?? '';
-        }
-    }
-
-    return result;
-}
-
-function applyGravity() {
-    boardData = dropBoardLetters(boardData);
-}
-
-function handleCellClick(event) {
-    const r = parseInt(event.target.dataset.r);
-    const c = parseInt(event.target.dataset.c);
-
-    if (selectedCells.length === 0) {
-        selectedCells.push([r, c]);
-        eraseButton.disabled = false;
-    } else {
-        const [prevR, prevC] = selectedCells[selectedCells.length - 1];
-
-        const isHorizontal = r === prevR && Math.abs(c - prevC) === 1;
-        const isVertical = c === prevC && Math.abs(r - prevR) === 1;
-
-        const index = selectedCells.findIndex(
-            coord => coord[0] === r && coord[1] === c
-        );
-
-        if (index > -1) {
-            selectedCells.splice(index + 1);
-        } else if (isHorizontal || isVertical) {
-            let shouldAdd = false;
-
-            if (selectedCells.length === 1) {
-                shouldAdd = true;
-            } else {
-                const [firstR, firstC] = selectedCells[0];
-
-                const isCurrentPatternHorizontal = selectedCells.every(
-                    coord => coord[0] === firstR
-                );
-
-                const isCurrentPatternVertical = selectedCells.every(
-                    coord => coord[1] === firstC
-                );
-
-                if (isCurrentPatternHorizontal) {
-                    if (r === firstR && isHorizontal) {
-                        shouldAdd = true;
-                    }
-                } else if (isCurrentPatternVertical) {
-                    if (c === firstC && isVertical) {
-                        shouldAdd = true;
-                    }
+                } else if (mode === 'substring') {
+                    apiPath = '/api/substring_search';
+                    requestBody = { listName: commonListName, searchText: getVal('substringText').trim() };
                 }
-            }
 
-            if (shouldAdd) {
-                selectedCells.push([r, c]);
-            } else {
-                selectedCells = [[r, c]];
-            }
-        } else {
-            selectedCells = [[r, c]];
-        }
-    }
+                // APIリクエスト送信
+                if (apiPath) {
+                    requestBody = { ...requestBody, ...getPagingRequest() };
+                    const response = await fetch(apiPath, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
+                    const data = await response.json();
+                    displayResults(data, mode);
+                }
 
-    eraseButton.disabled = selectedCells.length < 2;
-    renderBoard(5);
-}
-
-const undoButton = document.getElementById('undo-button');
-
-if (undoButton) {
-    undoButton.addEventListener('click', undoLastMove);
-}
-
-eraseButton.addEventListener('click', async () => {
-    if (selectedCells.length < 2) return;
-
-    let sortedSelectedCells = [...selectedCells];
-
-    const [firstR] = selectedCells[0];
-    const isHorizontal = selectedCells.every(coord => coord[0] === firstR);
-
-    if (isHorizontal) {
-        sortedSelectedCells.sort((a, b) => a[1] - b[1]);
-    } else {
-        sortedSelectedCells.sort((a, b) => a[0] - b[0]);
-    }
-
-    const selectedWordChars = sortedSelectedCells.map(([r, c]) => boardData[r][c]);
-    const selectedWord = selectedWordChars.join('');
-
-    let finalWord = '';
-
-    const modeLabel = getShortModeName(currentMode);
-
-    if (selectedWord.includes('F')) {
-        const tempWordChars = [...selectedWordChars];
-        const fIndices = [];
-
-        selectedWordChars.forEach((char, index) => {
-            if (char === 'F') {
-                fIndices.push(index);
+            } catch (error) {
+                console.error("Fetch error:", error);
+                resultsDiv.innerHTML = '<p class="error-message">通信に失敗しました。サーバーが起動しているか確認してください。</p>';
             }
         });
+    });
 
-        for (const index of fIndices) {
-            // 画面内のカタカナパレットから選ぶ（スマホでも操作しやすい）
-            const chosenChar = await askWildcardChar(
-                tempWordChars,
-                index,
-                currentMode
-            );
+    // --- 5. 結果表示ロジック ---
+    const getResultSummaryText = (data, count) => {
+        if (!data.page || !data.perPage) {
+            return `${count} 件の結果を表示します:`;
+        }
+        const start = count > 0 ? ((data.page - 1) * data.perPage) + 1 : 0;
+        const end = ((data.page - 1) * data.perPage) + count;
+        return `${start}-${end} 件目 / 全体 ${data.totalCount} 件`;
+    };
 
-            if (!chosenChar) {
-                showToast('文字の選択をキャンセルしました。', 'info');
+    const displayResults = (data, mode) => {
+        resultsDiv.innerHTML = '';
+        if (data.error) {
+            resultsDiv.innerHTML = `<p class="error-message">エラー: ${data.error}</p>`;
+            return;
+        }
+        if (prevPageBtn) {
+            prevPageBtn.disabled = data.page <= 1;
+        }
+
+        if (nextPageBtn) {
+            nextPageBtn.disabled = data.page >= data.totalPages;
+       }
+
+        // 自動生成モードの結果表示
+        if (mode === 'autoGenerate') {
+            if (data.warning) {
+                const warning = document.createElement('p');
+                warning.className = 'error-message';
+                warning.textContent = data.warning;
+                resultsDiv.appendChild(warning);
+            }
+
+            if (data.conditions) {
+                const conditionsDiv = document.createElement('div');
+                conditionsDiv.style.padding = '15px';
+                conditionsDiv.style.backgroundColor = '#e3f2fd';
+                conditionsDiv.style.borderRadius = '5px';
+                conditionsDiv.style.marginBottom = '20px';
+                conditionsDiv.style.border = '1px solid #90caf9';
+
+                const conditionsTitle = document.createElement('p');
+                conditionsTitle.style.fontWeight = 'bold';
+                conditionsTitle.style.fontSize = '1.1em';
+                conditionsTitle.style.marginTop = '0';
+                conditionsTitle.textContent = '適用された条件:';
+                conditionsDiv.appendChild(conditionsTitle);
+
+                const conditionsList = document.createElement('ul');
+                conditionsList.style.margin = '10px 0';
+                Object.entries(data.conditions).forEach(([key, value]) => {
+                    const li = document.createElement('li');
+                    if (key === 'totalLength') {
+                        li.textContent = `合計文字数: ${value}`;
+                    } else if (key === 'uniqueWordLengths') {
+                        li.textContent = `文字数の一意性: ${value}`;
+                    } else if (key === 'firstChar') {
+                        li.textContent = `開始文字: ${value}`;
+                    } else if (key === 'lastChar') {
+                        li.textContent = `終了文字: ${value}`;
+                    } else if (key === 'wordCount') {
+                        li.textContent = `単語数: ${value}`;
+                    } else if (key === 'includeChars') {
+                        li.textContent = `含める文字: ${value}`;
+                    } else if (key === 'excludeChars') {
+                        li.textContent = `除外文字: ${value}`;
+                    } else {
+                        li.textContent = `${key}: ${value}`;
+                    }
+                    conditionsList.appendChild(li);
+                });
+                conditionsDiv.appendChild(conditionsList);
+
+                resultsDiv.appendChild(conditionsDiv);
+            }
+
+            const results = data.results || [];
+            if (results.length === 0) {
+                resultsDiv.innerHTML += '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
                 return;
             }
 
-            tempWordChars[index] = chosenChar;
-        }
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = getResultSummaryText(data, results.length);
+            resultsDiv.appendChild(summary);
 
-        finalWord = tempWordChars.join('');
-    } else {
-        finalWord = selectedWord;
-    }
-
-    if (!currentDictionary.has(finalWord)) {
-        showToast(`「${finalWord}」は有効な${modeLabel}ではありません。`);
-        return;
-    }
-
-    if (usedWords.includes(finalWord)) {
-        showToast(`「${finalWord}」は既に使用済みです。`);
-        return;
-    }
-
-    // 1手戻す用に、消去前の盤面と使用済みワードを保存する
-
-    moveHistory.push({
-
-        board: JSON.parse(JSON.stringify(boardData)),
-
-        usedWords: [...usedWords]
-
-    });
-
-
-    selectedCells.forEach(([r, c]) => {
-        boardData[r][c] = '';
-    });
-
-    usedWords.push(finalWord);
-
-    applyGravity();
-
-    selectedCells = [];
-    eraseButton.disabled = true;
-
-    renderBoard(5);
-    updateStatusDisplay();
-
-    updateUndoButton();
-    await checkGameStatus();
-});
-
-resetBtn.addEventListener('click', () => {
-    if (isCreationPlay) {
-        showScreen('create');
-        renderCreateBoard();
-
-        // 作問時の判定モードに合わせてから盤面を復元する
-        const creationModeSelectOnReset = document.getElementById('creation-mode-select');
-        if (creationModeSelectOnReset) {
-            creationModeSelectOnReset.value = currentMode;
-        }
-
-        fillCreateBoard(initialPlayData);
-
-    } else if (initialPlayData.length > 0) {
-        // プレイ開始時に保存した初期盤面へ戻す（問題リストを再検索しない）
-        boardData = JSON.parse(JSON.stringify(initialPlayData));
-
-        selectedCells = [];
-        usedWords = [];
-        resetMoveHistory();
-        eraseButton.disabled = true;
-
-        renderBoard(5);
-        updateStatusDisplay();
-    }
-});
-
-// ----------------------------------------------------
-// 4. 問題制作モード
-// ----------------------------------------------------
-function renderCreateBoard() {
-    createBoardElement.innerHTML = '';
-
-    for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 5; c++) {
-            const cell = document.createElement('div');
-            cell.classList.add('create-cell');
-
-            const input = document.createElement('input');
-            input.classList.add('create-input');
-            input.type = 'text';
-            input.maxLength = 1;
-            input.dataset.r = r;
-            input.dataset.c = c;
-
-            input.addEventListener('compositionstart', () => {
-                isComposing = true;
+            const ul = document.createElement('ul');
+            ul.className = 'result-list';
+            results.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+                ul.appendChild(li);
             });
-
-            input.addEventListener('compositionend', (e) => {
-                isComposing = false;
-                checkCreationInput(e);
-                advanceCreateFocus(input);
-            });
-
-            input.addEventListener('input', (e) => {
-                if (!isComposing) {
-                    checkCreationInput(e);
-                    advanceCreateFocus(input);
-                }
-            });
-
-            input.addEventListener('blur', (e) => {
-                isComposing = false;
-                checkCreationInput(e);
-            });
-
-            input.setAttribute('aria-label', `${r + 1}行${c + 1}列`);
-            input.addEventListener('focus', () => input.select());
-            input.addEventListener('keydown', handleCreateInputKeydown);
-            input.addEventListener('paste', handleCreatePaste);
-
-            cell.appendChild(input);
-            createBoardElement.appendChild(cell);
-        }
-    }
-
-    const creationModeSelect = document.getElementById('creation-mode-select');
-    if (creationModeSelect && !creationModeSelect.value) {
-        creationModeSelect.value = 'country';
-    }
-}
-
-function fillCreateBoard(data) {
-    if (!data || data.length === 0) return;
-
-    const inputs = document.querySelectorAll('.create-input');
-
-    inputs.forEach(input => {
-        const r = parseInt(input.dataset.r);
-        const c = parseInt(input.dataset.c);
-
-        if (r < data.length && c < data[r].length) {
-            input.value = data[r][c] || '';
-        }
-    });
-
-    checkCreationInput();
-}
-
-function getCreationMode() {
-    const modeSelect = document.getElementById('creation-mode-select');
-    return modeSelect && isValidMode(modeSelect.value)
-        ? modeSelect.value
-        : 'country';
-}
-
-function checkCreationInput(event) {
-    const mode = getCreationMode();
-
-    if (event && event.target) {
-        const input = event.target;
-        let value = input.value;
-
-        if (event.type === 'compositionend' || event.type === 'blur' || !isComposing) {
-            value = value.toUpperCase();
-            value = toKatakana(value);
-
-            if (value.length > 0 && !isValidGameChar(value, mode)) {
-                value = '';
-            }
-
-            input.value = value.slice(0, 1);
-        }
-    }
-
-    const inputs = document.querySelectorAll('.create-input');
-    let filledCount = 0;
-
-    inputs.forEach(input => {
-        if (input.value.length === 0) {
+            resultsDiv.appendChild(ul);
             return;
         }
 
-        // 判定モードを切り替えたとき、そのモードで使えない文字は消す
-        if (input.value.length === 1 && isValidGameChar(input.value, mode)) {
-            filledCount++;
-        } else {
-            input.value = '';
-        }
-    });
+        // チェーン検索の結果表示
+        if (mode === 'chain') {
+            const results = data.results || [];
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
+                return;
+            }
 
-    if (filledCount >= 1) {
-        btnInputComplete.disabled = false;
-        document.getElementById('create-status').textContent =
-            `入力済み: ${filledCount}マス。解答を開始できます。`;
-    } else {
-        btnInputComplete.disabled = true;
-        document.getElementById('create-status').textContent =
-            '1マス以上に入力してください。';
-    }
-}
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = getResultSummaryText(data, results.length);
+            resultsDiv.appendChild(summary);
 
-// 判定モードを切り替えたら、入力済みの文字を再チェックする
-const creationModeSelectElement = document.getElementById('creation-mode-select');
-
-if (creationModeSelectElement) {
-    creationModeSelectElement.addEventListener('change', () => {
-        checkCreationInput();
-    });
-}
-
-btnInputComplete.addEventListener('click', () => {
-    const inputs = document.querySelectorAll('.create-input');
-    const newBoard = Array(8).fill(0).map(() => Array(5).fill(''));
-
-    inputs.forEach(input => {
-        const r = parseInt(input.dataset.r);
-        const c = parseInt(input.dataset.c);
-
-        newBoard[r][c] = input.value;
-    });
-
-    const modeSelect = document.getElementById('creation-mode-select');
-    const mode = modeSelect ? modeSelect.value : 'country';
-
-    // 空マスの上に浮いた文字は下へ落とした状態で開始する
-    initialPlayData = dropBoardLetters(newBoard);
-    boardData = JSON.parse(JSON.stringify(initialPlayData));
-
-    startGameByMode(mode, true);
-});
-
-// ----------------------------------------------------
-// 5. ランキング
-// ----------------------------------------------------
-const rankingTabs = document.getElementById('ranking-tabs');
-
-async function fetchAndDisplayRanking(type) {
-    const container = document.getElementById('ranking-list-container');
-    const nicknameDisplay = document.getElementById(
-        'ranking-nickname-display'
-    );
-
-    const requestId = ++rankingRequestCounter;
-    const myRankElement = document.getElementById('ranking-my-rank');
-
-    if (myRankElement) {
-        myRankElement.hidden = true;
-    }
-
-    container.classList.remove('ranking-error');
-    container.textContent = `${type}ランキングをサーバーから取得中...`;
-
-    const countryClears = Number(playerStats.country_clears) || 0;
-    const capitalClears = Number(playerStats.capital_clears) || 0;
-    const pokemonClears = Number(playerStats.pokemon_clears) || 0;
-
-    const totalScore =
-        countryClears +
-        capitalClears +
-        pokemonClears;
-
-    const safeCurrentPlayerNickname = escapeHtml(
-        isLoggedIn() ? currentPlayerNickname : 'ゲスト'
-    );
-
-    nicknameDisplay.innerHTML =
-        `あなたの記録: <strong>${safeCurrentPlayerNickname}</strong> ` +
-        `(国名: ${countryClears}, ` +
-        `首都名: ${capitalClears}, ` +
-        `ポケモン: ${pokemonClears}, ` +
-        `合計: ${totalScore})`;
-
-    try {
-        const response = await fetchWithRetry(
-            `${API_BASE_URL}/rankings/${encodeURIComponent(type)}`
-        );
-
-        if (!response.ok) {
-            throw new Error('ランキング取得サーバーエラー');
-        }
-
-        const rankings = await response.json();
-
-        // 素早くタブを切り替えたとき、古い結果で上書きしない
-        if (requestId !== rankingRequestCounter) {
+            const ul = document.createElement('ul');
+            ul.className = 'result-list';
+            results.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+                ul.appendChild(li);
+            });
+            resultsDiv.appendChild(ul);
             return;
         }
 
-        if (!Array.isArray(rankings)) {
-            throw new Error('ランキングデータの形式が不正です');
+        // サーバーからのレスポンス形式を統合
+        const results = data.results || [];
+        const firstCharCounts = data.firstCharCounts || {};
+        const lastCharCounts = data.lastCharCounts || {};
+
+        if (results.length === 0 && Object.keys(firstCharCounts).length === 0 && Object.keys(lastCharCounts).length === 0) {
+            resultsDiv.innerHTML = '<p class="placeholder">該当する単語や経路は見つかりませんでした。</p>';
+            return;
         }
 
-        let title = '総合';
+        // 経路表示モード（すべて表示）
+        if (results.length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = getResultSummaryText(data, results.length);
+            resultsDiv.appendChild(summary);
 
-        if (type === 'country') {
-            title = '国名';
-        } else if (type === 'capital') {
-            title = '首都名';
-        } else if (type === 'pokemon') {
-            title = 'ポケモン';
+            const ul = document.createElement('ul');
+            ul.className = 'result-list';
+            results.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
+                ul.appendChild(li);
+            });
+            resultsDiv.appendChild(ul);
         }
 
-        let html = `<h3>${escapeHtml(title)}ランキング</h3>`;
+        // 開始文字別集計モード
+        if (Object.keys(firstCharCounts).length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = '開始文字別集計:';
+            resultsDiv.appendChild(summary);
 
-        html += `
-            <table class="ranking-table">
-                <thead>
-                    <tr>
-                        <th>順位</th>
-                        <th>ニックネーム</th>
-                        <th>クリア数</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        rankings.forEach(item => {
-            const nickname = String(item.nickname || '名前なし');
-            const safeNickname = escapeHtml(nickname);
-
-            const safeRank = Number.isFinite(Number(item.rank))
-                ? Number(item.rank)
-                : 0;
-
-            const safeScore = Number.isFinite(Number(item.score))
-                ? Number(item.score)
-                : 0;
-
-            // ゲストはランキングに載らないので、ログイン中のみ自分の行を強調する
-            const isCurrentPlayer =
-                isLoggedIn() &&
-                nickname === currentPlayerNickname;
-
-            html += `
-                <tr class="${isCurrentPlayer ? 'current-player-row' : ''}">
-                    <td>${safeRank}</td>
-                    <td>${safeNickname}${isCurrentPlayer ? ' <span class="you-badge">あなた</span>' : ''}</td>
-                    <td>${safeScore}</td>
-                </tr>
-            `;
-        });
-
-        html += `
-                </tbody>
-            </table>
-        `;
-
-        container.innerHTML = html;
-
-        await updateMyRank(type, requestId);
-    } catch (error) {
-        console.error('ランキング取得に失敗しました。', {
-            name: error.name
-        });
-
-        container.classList.add('ranking-error');
-        container.textContent =
-            'ランキング取得エラー: サーバーが起動しているか、ネットワーク接続を確認してください。';
-    }
-}
-// ----------------------------------------------------
-// 5.5. ワードリスト表示
-// ----------------------------------------------------
-function displayWordList(type) {
-    const dictionary = getDictionaryByMode(type);
-
-    if (dictionary.length === 0) {
-        wordListContent.innerHTML = `<p>辞書データがサーバーからロードされていません。</p>`;
-        return;
-    }
-
-    wordListTabs.querySelectorAll('button').forEach(btn => {
-        if (btn.dataset.type === type) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
-
-    wordListContent.innerHTML = '';
-
-    const sortedDictionary = [...dictionary].sort((a, b) => {
-        if (a.length !== b.length) {
-            return a.length - b.length;
+            const table = document.createElement('table');
+            table.className = 'count-table';
+            table.innerHTML = '<tr><th>開始文字</th><th>件数</th></tr>';
+            
+            Object.entries(firstCharCounts).forEach(([char, count]) => {
+                const row = table.insertRow();
+                row.innerHTML = `<td>${char}</td><td>${count}</td>`;
+            });
+            
+            resultsDiv.appendChild(table);
         }
 
-        return a.localeCompare(b);
-    });
+        // 終了文字別集計モード
+        if (Object.keys(lastCharCounts).length > 0) {
+            const summary = document.createElement('p');
+            summary.className = 'result-summary';
+            summary.textContent = '終了文字別集計:';
+            resultsDiv.appendChild(summary);
 
-    sortedDictionary.forEach(word => {
-        const item = document.createElement('div');
-        item.classList.add('word-item');
-        item.textContent = word;
-        wordListContent.appendChild(item);
-    });
-}
-
-// ----------------------------------------------------
-// 6. イベントリスナー
-// ----------------------------------------------------
-function enforceMaxLength(elementId, maxLength) {
-    const inputElement = document.getElementById(elementId);
-
-    if (inputElement) {
-        inputElement.addEventListener('input', function () {
-            if (this.value.length > maxLength) {
-                this.value = this.value.substring(0, maxLength);
-            }
-        });
-    }
-}
-
-if (btnLoginSubmit) {
-    btnLoginSubmit.addEventListener('click', () => {
-        runLogin();
-    });
-}
-
-if (btnRegisterSubmit) {
-    btnRegisterSubmit.addEventListener('click', () => {
-        runRegister();
-    });
-}
-
-if (inputPasscode) {
-    inputPasscode.addEventListener(
-        'keydown',
-        event => {
-            if (
-                event.key === 'Enter' &&
-                !event.isComposing
-            ) {
-                event.preventDefault();
-
-                runLogin();
-            }
+            const table = document.createElement('table');
+            table.className = 'count-table';
+            table.innerHTML = '<tr><th>終了文字</th><th>件数</th></tr>';
+            
+            Object.entries(lastCharCounts).forEach(([char, count]) => {
+                const row = table.insertRow();
+                row.innerHTML = `<td>${char}</td><td>${count}</td>`;
+            });
+            
+            resultsDiv.appendChild(table);
         }
-    );
-}
-
-if (btnGuestPlay) {
-    btnGuestPlay.addEventListener(
-        'click',
-        async () => {
-            btnGuestPlay.disabled = true;
-
-            try {
-                await fetchWithRetry(
-                    `${API_BASE_URL}/player/logout`,
-                    {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json'
-                        }
-                    }
-                );
-            } catch (error) {
-                console.warn(
-                    '既存セッションの終了に失敗しました。',
-                    {
-                        name: error.name
-                    }
-                );
-            } finally {
-                clearLocalPlayerState();
-
-                // ニックネームの文字列ではなく、専用フラグでゲストを判定する
-                isGuestPlayer = true;
-                currentPlayerNickname = null;
-                currentPlayerId = null;
-
-                playerStats.country_clears =
-                    getClearedPuzzles('country').length;
-
-                playerStats.capital_clears =
-                    getClearedPuzzles('capital').length;
-
-                playerStats.pokemon_clears =
-                    getClearedPuzzles('pokemon').length;
-
-                btnGuestPlay.disabled = false;
-
-                showToast(
-                    'ゲストとしてゲームを開始します。' +
-                    'スコアはランキングに保存されません。'
-                );
-
-                await loadPuzzlesAndWords();
-                showScreen('home');
-            }
-        }
-    );
-}
-const logoutButton =
-    document.getElementById('btn-logout');
-
-if (logoutButton) {
-    logoutButton.addEventListener(
-        'click',
-        async () => {
-            logoutButton.disabled = true;
-
-            try {
-                await fetchWithRetry(
-                    `${API_BASE_URL}/player/logout`,
-                    {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json'
-                        }
-                    }
-                );
-            } catch (error) {
-                console.error(
-                    'ログアウト通信に失敗しました。',
-                    {
-                        name: error.name
-                    }
-                );
-            } finally {
-                clearLocalPlayerState();
-                logoutButton.disabled = false;
-                showScreen('auth');
-            }
-        }
-    );
-}
-
-// ホーム画面
-document.getElementById('btn-country-mode').addEventListener('click', () => {
-    showPuzzleListByMode('country');
+    };
 });
-
-document.getElementById('btn-capital-mode').addEventListener('click', () => {
-    showPuzzleListByMode('capital');
-});
-
-const btnPokemonMode = document.getElementById('btn-pokemon-mode');
-if (btnPokemonMode) {
-    btnPokemonMode.addEventListener('click', () => {
-        showPuzzleListByMode('pokemon');
-    });
-}
-
-const btnPuzzleListBack = document.getElementById('btn-puzzle-list-back');
-if (btnPuzzleListBack) {
-    btnPuzzleListBack.addEventListener('click', () => {
-        showScreen('home');
-    });
-}
-
-document.getElementById('btn-create-mode').addEventListener('click', () => {
-    if (!isLoggedIn()) {
-        showToast('問題制作モードを利用するには、ログインしてください。');
-        return;
-    }
-
-    showScreen('create');
-    renderCreateBoard();
-    checkCreationInput();
-});
-
-document.getElementById('btn-ranking').addEventListener('click', () => {
-    showScreen('ranking');
-    fetchAndDisplayRanking('total');
-});
-
-if (rankingTabs) {
-    rankingTabs.addEventListener('click', (event) => {
-        if (event.target.tagName === 'BUTTON') {
-            fetchAndDisplayRanking(event.target.dataset.type);
-        }
-    });
-}
-
-// ワードリスト
-document.getElementById('btn-word-list').addEventListener('click', () => {
-    showScreen('wordList');
-    displayWordList('country');
-});
-
-if (wordListTabs) {
-    wordListTabs.addEventListener('click', (event) => {
-        if (event.target.tagName === 'BUTTON') {
-            displayWordList(event.target.dataset.type);
-        }
-    });
-}
-
-// 画面遷移ボタン
-document.getElementById('btn-back-to-home').addEventListener('click', () => {
-    showScreen('home');
-});
-
-document.getElementById('btn-create-back').addEventListener('click', () => {
-    showScreen('home');
-});
-
-document.getElementById('btn-ranking-back').addEventListener('click', () => {
-    showScreen('home');
-});
-
-document.getElementById('btn-word-list-back').addEventListener('click', () => {
-    showScreen('home');
-});
-
-// ----------------------------------------------------
-// 7. 初期化
-// ----------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
-    enforceMaxLength('nickname-input', 20);
-});
-
-setupPlayer();
