@@ -503,3 +503,18 @@ button.secondary:disabled {
 .form-group.disabled input {
     cursor: not-allowed;
 }
+
+/* hidden 属性を .form-group などの display 指定より優先する */
+[hidden] {
+    display: none !important;
+}
+
+/* 共通条件 / 高度条件のまとまり */
+.common-conditions,
+.advanced-settings {
+    margin-bottom: 15px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #fafafa;
+}

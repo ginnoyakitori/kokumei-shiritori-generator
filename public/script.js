@@ -54,6 +54,15 @@ substring: document.getElementById('substringMode')
                 modeSections[mode].classList.toggle('active', mode === selectedMode);
             }
         });
+
+        // 共通条件: 自動生成モード以外で表示。項目ごとに data-modes で表示モードを限定できる
+        const commonSection = document.getElementById('commonConditions');
+        if (commonSection) {
+            commonSection.hidden = selectedMode === 'autoGenerate';
+            commonSection.querySelectorAll('[data-modes]').forEach(el => {
+                el.hidden = !el.dataset.modes.split(/\s+/).includes(selectedMode);
+            });
+        }
     };
     modeSelect.addEventListener('change', updateModeView);
     modeSelect.addEventListener('change', () => {
@@ -173,7 +182,7 @@ if (
 
     // 文字数入力の表示制御
     const wordCountTypeSelect = document.getElementById('wordCountType');
-    const shiritoriTotalLengthInput = document.getElementById('shiritoriTotalLength');
+    const shiritoriTotalLengthInput = document.getElementById('commonTotalLength');
 
     const updateWordCountNoneOption = () => {
         if (!wordCountTypeSelect) return;
@@ -556,9 +565,15 @@ if (
             return;
         }
 
+        // 共通条件（自動生成モード以外のすべてのモード）
+        if (parsed.firstChar) setVal('firstChar', parsed.firstChar);
+        if (parsed.lastChar) setVal('lastChar', parsed.lastChar);
+        if (parsed.totalLength) setVal('commonTotalLength', parsed.totalLength);
+        if (parsed.includeChars?.length) setVal('includeChars', parsed.includeChars.join(','));
+        if (parsed.excludeChars?.length) setVal('excludeChars', parsed.excludeChars.join(','));
+        if (parsed.uniqueWordLengths) setChecked('uniqueWordLengths', true);
+
         if (currentMode === 'shiritori') {
-            if (parsed.firstChar) setVal('firstChar', parsed.firstChar);
-            if (parsed.lastChar) setVal('lastChar', parsed.lastChar);
             const container = document.getElementById('wordCountInputContainer');
             if (parsed.wordCountType === 'shortest') {
                 setVal('wordCountType', 'shortest');
@@ -571,29 +586,14 @@ if (
                 setVal('wordCount', parsed.wordCount);
                 if (container) container.style.display = 'block';
             }
-            if (parsed.totalLength) setVal('shiritoriTotalLength', parsed.totalLength);
-            if (parsed.includeChars?.length) setVal('includeChars', parsed.includeChars.join(','));
-            if (parsed.excludeChars?.length) setVal('excludeChars', parsed.excludeChars.join(','));
-            if (parsed.uniqueWordLengths) setChecked('uniqueWordLengths', true);
             return;
         }
 
-        if (currentMode === 'chain') {
-            if (parsed.pattern) setVal('chainPattern', parsed.pattern);
-            if (parsed.includeChars?.length) setVal('chainRequiredChars', parsed.includeChars.join(','));
-            if (parsed.excludeChars?.length) setVal('chainExcludeChars', parsed.excludeChars.join(','));
-            return;
+        if ((currentMode === 'chain' || currentMode === 'loop') && parsed.wordCount) {
+            setVal('commonPathWordCount', parsed.wordCount);
         }
-
-        if (currentMode === 'loop' && parsed.pattern) {
-            setVal('loopPattern', parsed.pattern);
-            if (parsed.totalLength) setVal('loopTotalLength', parsed.totalLength);
-            return;
-        }
-
-        if (currentMode === 'wordCountShiritori' && parsed.totalLength) {
-            setVal('wordCountTotalLength', parsed.totalLength);
-        }
+        if (currentMode === 'chain' && parsed.pattern) setVal('chainPattern', parsed.pattern);
+        if (currentMode === 'loop' && parsed.pattern) setVal('loopPattern', parsed.pattern);
     };
 
     const handleConditionChat = () => {
@@ -779,6 +779,35 @@ if (
         clearAdvancedButton.addEventListener('click', handleClearAdvancedConditions);
     }
 
+    // --- 共通条件（文字指定しりとりの条件）をリクエスト用にまとめる ---
+    const splitCharList = (value) => {
+        const list = String(value || '')
+            .split(/[,、\s]+/)
+            .map(part => part.trim())
+            .filter(Boolean);
+        return list.length ? list : null;
+    };
+
+    const getCommonConditionsRequest = () => {
+        const totalLengthVal = getVal('commonTotalLength');
+        const pathWordCountVal = getVal('commonPathWordCount');
+        const usesPathWordCount = ['loop', 'chain'].includes(modeSelect.value);
+
+        return {
+            firstChar: getVal('firstChar').trim() || null,
+            lastChar: getVal('lastChar').trim() || null,
+            requiredChars: splitCharList(getVal('includeChars')),
+            excludeChars: getVal('excludeChars').trim(),
+            requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
+            outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
+            uniqueWordLengths: getChecked('uniqueWordLengths'),
+            uniquePairOnly: getChecked('globalUniquePairOnly'),
+            totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
+            pathWordCount: usesPathWordCount && pathWordCountVal ? parseInt(pathWordCountVal, 10) : null,
+            advancedConditions: getAdvancedConditionsForRequest()
+        };
+    };
+
     // --- 4. 検索実行メインロジック ---
     searchButtons.forEach(button => {
         button.addEventListener('click', async () => {
@@ -790,113 +819,67 @@ if (
             let requestBody = {};
 
             try {
+                const common = getCommonConditionsRequest();
+
                 if (mode === 'shiritori') {
                     apiPath = '/api/shiritori';
-                    const includeStr = getVal('includeChars');
-                    const totalLengthVal = getVal('shiritoriTotalLength');
                     requestBody = {
                         listName: commonListName,
-                        firstChar: getVal('firstChar').trim() || null,
-                        lastChar: getVal('lastChar').trim() || null,
+                        ...common,
                         wordCount: getVal('wordCountType') === 'fixed'
                             ? parseInt(getVal('wordCount'), 10)
                             : getVal('wordCountType') === 'shortest'
                                 ? 'shortest'
-                                : null,
-                        requiredChars: includeStr ? includeStr.split(',').map(c => c.trim()) : null,
-                        excludeChars: getVal('excludeChars').trim(),
-                        outputType: document.querySelector('input[name="outputType"]:checked')?.value || 'path',
-                        requiredCharMode: getChecked('requiredCharExactly') ? 'exactly' : 'atLeast',
-                        uniqueWordLengths: getChecked('uniqueWordLengths'),
-                        uniquePairOnly: getChecked('globalUniquePairOnly'),
-                        totalLength: totalLengthVal ? parseInt(totalLengthVal, 10) : null,
-                        advancedConditions: getAdvancedConditionsForRequest()
+                                : null
                     };
                 } else if (mode === 'wildcardShiritori') {
                     apiPath = '/api/wildcard_shiritori';
 
                     const patterns = Array.from(document.querySelectorAll('.word-pattern-input'))
                         .map(input => input.value.trim())
-                        .filter(val => val !== "");
-
-                    const totalLengthVal = getVal('wildcardTotalLength');
+                        .filter(val => val !== '');
 
                     requestBody = {
-    listName: commonListName,
-    wordPatterns: patterns,
-    requiredChars: null,
-    requiredCharMode: 'atLeast',
-    uniquePairOnly: getChecked('globalUniquePairOnly'),
-    totalLength: totalLengthVal
-        ? parseInt(totalLengthVal, 10)
-        : null,
-    advancedConditions: getAdvancedConditionsForRequest()
-};
-
+                        listName: commonListName,
+                        wordPatterns: patterns,
+                        ...common
+                    };
                 } else if (mode === 'wordCountShiritori') {
                     apiPath = '/api/word_count_shiritori';
+
                     const patterns = Array.from(document.querySelectorAll('.word-count-input'))
-                                          .map(input => input.value.trim())
-                                          .filter(val => val !== '')
-                                          .map(val => val.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)));
-                    const totalLengthVal = getVal('wordCountTotalLength');
+                        .map(input => input.value.trim())
+                        .filter(val => val !== '')
+                        .map(val => val.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)));
+
                     requestBody = {
-    listName: commonListName,
-    wordCountPatterns: patterns,
-    allowPermutation: getChecked('allowWordCountPermutation'),
-    uniqueWordLengths: getChecked('uniqueWordLengthsWordCount'),
-    uniquePairOnly: getChecked('globalUniquePairOnly'),
-    totalLength: totalLengthVal
-        ? parseInt(totalLengthVal, 10)
-        : null,
-    advancedConditions: getAdvancedConditionsForRequest()
-};
+                        listName: commonListName,
+                        wordCountPatterns: patterns,
+                        allowPermutation: getChecked('allowWordCountPermutation'),
+                        ...common
+                    };
                 } else if (mode === 'loop') {
                     apiPath = '/api/loop_shiritori';
-                    const totalLengthVal = getVal('loopTotalLength');
                     requestBody = {
-    listName: commonListName,
-    pattern: getVal('loopPattern').trim(),
-    uniquePairOnly: getChecked('globalUniquePairOnly'),
-    totalLength: totalLengthVal
-        ? parseInt(totalLengthVal, 10)
-        : null,
-    advancedConditions: getAdvancedConditionsForRequest()
-};
-
+                        listName: commonListName,
+                        pattern: getVal('loopPattern').trim(),
+                        ...common
+                    };
                 } else if (mode === 'chain') {
-    apiPath = '/api/chain_shiritori';
+                    apiPath = '/api/chain_shiritori';
 
-    const patternVal = getVal('chainPattern').trim();
-    const requiredStr = getVal('chainRequiredChars');
-    const excludeStr = getVal('chainExcludeChars');
-    const totalLengthVal = getVal('chainTotalLength');
+                    const patternVal = getVal('chainPattern').trim();
+                    if (!patternVal) {
+                        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
+                        return;
+                    }
 
-    if (!patternVal) {
-        resultsDiv.innerHTML = '<p class="error-message">エラー: パターンは必須です。</p>';
-        return;
-    }
-
-    requestBody = {
-    listName: commonListName,
-    pattern: patternVal,
-    requiredChars: requiredStr
-        ? requiredStr.split(',').map(c => c.trim()).filter(Boolean)
-        : null,
-    excludeChars: excludeStr
-        ? excludeStr.split(',').map(c => c.trim()).filter(Boolean)
-        : null,
-    requiredCharMode:
-        getChecked('chainRequiredCharExactly')
-            ? 'exactly'
-            : 'atLeast',
-    uniquePairOnly: getChecked('globalUniquePairOnly'),
-    totalLength: totalLengthVal
-        ? parseInt(totalLengthVal, 10)
-        : null,
-    advancedConditions: getAdvancedConditionsForRequest()
-};
-} else if (mode === 'autoGenerate') {
+                    requestBody = {
+                        listName: commonListName,
+                        pattern: patternVal,
+                        ...common
+                    };
+                } else if (mode === 'autoGenerate') {
                     apiPath = '/api/auto_generate';
                     
                     // 条件の取得と構築
@@ -946,33 +929,32 @@ if (
                     
                     
 
-                }else if (mode === 'wildcardWords') {
+                } else if (mode === 'wildcardWords') {
+                    apiPath = '/api/wildcard_words';
 
-    apiPath = '/api/wildcard_words';
+                    const patterns = Array.from(document.querySelectorAll('.word-pattern-input-words'))
+                        .map(input => input.value.trim())
+                        .filter(Boolean);
 
-    const patterns =
-        Array.from(
-            document.querySelectorAll(
-                '.word-pattern-input-words'
-            )
-        )
-        .map(input => input.value.trim())
-        .filter(Boolean);
-
-    requestBody = {
-    listName: commonListName,
-    wordPatterns: patterns,
-    uniquePairOnly: getChecked('globalUniquePairOnly')
-};
-}
-                
-                else if (mode === 'wildcard') {
+                    requestBody = {
+                        listName: commonListName,
+                        wordPatterns: patterns,
+                        ...common
+                    };
+                } else if (mode === 'wildcard') {
                     apiPath = '/api/wildcard_search';
-                    requestBody = { listName: commonListName, searchText: getVal('wildcardText').trim() };
-
+                    requestBody = {
+                        listName: commonListName,
+                        searchText: getVal('wildcardText').trim(),
+                        ...common
+                    };
                 } else if (mode === 'substring') {
                     apiPath = '/api/substring_search';
-                    requestBody = { listName: commonListName, searchText: getVal('substringText').trim() };
+                    requestBody = {
+                        listName: commonListName,
+                        searchText: getVal('substringText').trim(),
+                        ...common
+                    };
                 }
 
                 // APIリクエスト送信
@@ -1076,30 +1058,6 @@ if (
             const results = data.results || [];
             if (results.length === 0) {
                 resultsDiv.innerHTML += '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
-                return;
-            }
-
-            const summary = document.createElement('p');
-            summary.className = 'result-summary';
-            summary.textContent = getResultSummaryText(data, results.length);
-            resultsDiv.appendChild(summary);
-
-            const ul = document.createElement('ul');
-            ul.className = 'result-list';
-            results.forEach((item, index) => {
-                const li = document.createElement('li');
-                li.textContent = Array.isArray(item) ? `${index + 1}. ${item.join(' → ')}` : item;
-                ul.appendChild(li);
-            });
-            resultsDiv.appendChild(ul);
-            return;
-        }
-
-        // チェーン検索の結果表示
-        if (mode === 'chain') {
-            const results = data.results || [];
-            if (results.length === 0) {
-                resultsDiv.innerHTML = '<p class="placeholder">条件に合うしりとりは見つかりませんでした。</p>';
                 return;
             }
 
